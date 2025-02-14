@@ -15,7 +15,7 @@ import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.helper.EditorHelper
 import com.maddyhome.idea.vim.helper.MessageHelper
 import com.maddyhome.idea.vim.newapi.ij
@@ -27,13 +27,18 @@ import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
  * @author John Weigel
  */
 @ExCommand(command = "b[uffer]")
-internal data class BufferCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges) {
+internal data class BufferCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier) {
+
   override val argFlags = flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
 
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
-    val arg = argument.trim()
-    val overrideModified = arg.startsWith('!')
-    val buffer = if (overrideModified) arg.replace(Regex("^!\\s*"), "") else arg
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
+    val overrideModified = modifier == CommandModifier.BANG
+    val buffer = argument.trim()
     var result = true
 
     if (buffer.isNotEmpty()) {
@@ -54,6 +59,7 @@ internal data class BufferCommand(val ranges: Ranges, val argument: String) : Co
             VimPlugin.showMessage(MessageHelper.message("no.matching.buffer.for.0", buffer))
             result = false
           }
+
           1 -> {
             if (EditorHelper.hasUnsavedChanges(editor.ij) && !overrideModified) {
               VimPlugin.showMessage(MessageHelper.message("no.write.since.last.change.add.to.override"))
@@ -62,6 +68,7 @@ internal data class BufferCommand(val ranges: Ranges, val argument: String) : Co
               VimPlugin.getFile().openFile(EditorHelper.getVirtualFile(editors[0].ij)!!.name, context)
             }
           }
+
           else -> {
             VimPlugin.showMessage(MessageHelper.message("more.than.one.match.for.0", buffer))
             result = false

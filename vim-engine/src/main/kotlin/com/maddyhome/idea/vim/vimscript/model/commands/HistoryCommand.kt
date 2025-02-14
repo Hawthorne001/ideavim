@@ -14,7 +14,7 @@ import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.diagnostic.vimLogger
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.history.HistoryConstants.COMMAND
 import com.maddyhome.idea.vim.history.HistoryConstants.EXPRESSION
 import com.maddyhome.idea.vim.history.HistoryConstants.INPUT
@@ -25,9 +25,17 @@ import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
  * see "h :history"
  */
 @ExCommand(command = "his[tory]")
-public data class HistoryCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges, argument) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+data class HistoryCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier, argument) {
+
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
+
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     logger.debug("execute")
 
     var arg = argument.trim().ifEmpty { "cmd" }
@@ -105,8 +113,7 @@ public data class HistoryCommand(val ranges: Ranges, val argument: String) : Com
       else -> ""
     }
 
-    injector.exOutputPanel.getPanel(editor).output(res)
-
+    injector.outputPanel.output(editor, context, res)
     return ExecutionResult.Success
   }
 
@@ -119,7 +126,7 @@ public data class HistoryCommand(val ranges: Ranges, val argument: String) : Com
     }
   }
 
-  public companion object {
+  companion object {
     private val logger = vimLogger<HistoryCommand>()
   }
 }

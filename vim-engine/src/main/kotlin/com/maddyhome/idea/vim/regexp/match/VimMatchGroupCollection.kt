@@ -13,7 +13,7 @@ import com.maddyhome.idea.vim.common.TextRange
 /**
  * A collection of match results of capture groups
  */
-public class VimMatchGroupCollection(
+class VimMatchGroupCollection(
   /**
    * The maximum amount of capture groups.
    * There can only be a maximum of 10 capture groups.
@@ -22,7 +22,7 @@ public class VimMatchGroupCollection(
    */
   override val size: Int = 10,
 
-) : Collection<VimMatchGroup> {
+  ) : Collection<VimMatchGroup> {
   /**
    * Store the capture groups
    */
@@ -53,7 +53,7 @@ public class VimMatchGroupCollection(
    *
    * @return The capture group with the desired number, or null if the number is too big
    */
-  public fun get(index: Int): VimMatchGroup? {
+  fun get(index: Int): VimMatchGroup? {
     return if (index < groupCount && index < groups.size && index >= 0) groups[index]
     else null
   }

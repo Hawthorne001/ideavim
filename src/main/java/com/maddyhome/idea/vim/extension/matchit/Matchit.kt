@@ -14,6 +14,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
+import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.ImmutableVimCaret
@@ -40,10 +41,10 @@ import com.maddyhome.idea.vim.handler.toMotionOrError
 import com.maddyhome.idea.vim.helper.EditorHelper
 import com.maddyhome.idea.vim.helper.PsiHelper
 import com.maddyhome.idea.vim.helper.enumSetOf
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.newapi.IjVimEditor
 import com.maddyhome.idea.vim.newapi.ij
 import com.maddyhome.idea.vim.newapi.vim
+import com.maddyhome.idea.vim.state.mode.Mode
 import java.util.*
 import java.util.regex.Pattern
 
@@ -91,35 +92,31 @@ internal class Matchit : VimExtension {
   private class MatchitHandler(private val reverse: Boolean) : ExtensionHandler {
 
     override fun execute(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments) {
-      val commandState = editor.vimStateMachine
-      val count = commandState.commandBuilder.count
+      val keyHandler = KeyHandler.getInstance()
+      val keyState = keyHandler.keyHandlerState
 
       // Reset the command count so it doesn't transfer onto subsequent commands.
-      editor.vimStateMachine.commandBuilder.resetCount()
+      keyState.commandBuilder.resetCount()
 
       // Normally we want to jump to the start of the matching pair. But when moving forward in operator
       // pending mode, we want to include the entire match. isInOpPending makes that distinction.
-      val isInOpPending = commandState.isOperatorPending(editor.mode)
-
-      if (isInOpPending) {
+      if (editor.mode is Mode.OP_PENDING) {
         val matchitAction = MatchitAction()
         matchitAction.reverse = reverse
         matchitAction.isInOpPending = true
 
-        commandState.commandBuilder.completeCommandPart(
-          Argument(
-            Command(
-              count,
-              matchitAction,
-              Command.Type.MOTION,
-              EnumSet.noneOf(CommandFlags::class.java),
-            ),
-          ),
-        )
+        keyState.commandBuilder.addAction(matchitAction)
       } else {
         editor.sortedCarets().forEach { caret ->
           injector.jumpService.saveJumpLocation(editor)
-          caret.moveToOffset(getMatchitOffset(editor.ij, caret.ij, count, isInOpPending, reverse))
+          caret.moveToOffset(
+            getMatchitOffset(
+              editor.ij,
+              caret.ij,
+              operatorArguments.count0,
+              isInOpPending = false,
+              reverse
+            ))
         }
       }
     }
@@ -353,7 +350,7 @@ private object FileTypePatterns {
 
 private val DEFAULT_PAIRS = setOf('(', ')', '[', ']', '{', '}')
 
-private fun getMatchitOffset(editor: Editor, caret: Caret, count: Int, isInOpPending: Boolean, reverse: Boolean): Int {
+private fun getMatchitOffset(editor: Editor, caret: Caret, count0: Int, isInOpPending: Boolean, reverse: Boolean): Int {
   val virtualFile = EditorHelper.getVirtualFile(editor)
   var caretOffset = caret.offset
 
@@ -366,9 +363,9 @@ private fun getMatchitOffset(editor: Editor, caret: Caret, count: Int, isInOpPen
   val currentChar = editor.document.charsSequence[caretOffset]
   var motionOffset: Int? = null
 
-  if (count > 0) {
+  if (count0 > 0) {
     // Matchit doesn't affect the percent motion, so we fall back to the default behavior.
-    motionOffset = VimPlugin.getMotion().moveCaretToLinePercent(editor.vim, caret.vim, count)
+    motionOffset = VimPlugin.getMotion().moveCaretToLinePercent(editor.vim, caret.vim, count0)
   } else {
     // Check the simplest case first.
     if (DEFAULT_PAIRS.contains(currentChar)) {
@@ -399,8 +396,7 @@ private fun getMatchitOffset(editor: Editor, caret: Caret, count: Int, isInOpPen
 
 private fun getMotionOffset(motion: Motion): Int? {
   return when (motion) {
-    is Motion.AbsoluteOffset -> motion.offset
-    is Motion.AdjustedOffset -> motion.offset
+    is Motion.AdjustedOffset, is Motion.AbsoluteOffset -> motion.offset
     is Motion.Error, is Motion.NoMotion -> null
   }
 }

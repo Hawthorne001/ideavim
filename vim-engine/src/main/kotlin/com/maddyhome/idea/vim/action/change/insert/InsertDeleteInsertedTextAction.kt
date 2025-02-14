@@ -24,7 +24,7 @@ import com.maddyhome.idea.vim.state.mode.SelectionType
 import java.util.*
 
 @CommandOrMotion(keys = ["<C-U>"], modes = [Mode.INSERT])
-public class InsertDeleteInsertedTextAction : ChangeEditorActionHandler.ForEachCaret() {
+class InsertDeleteInsertedTextAction : ChangeEditorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.INSERT
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_CLEAR_STROKES)
@@ -36,7 +36,7 @@ public class InsertDeleteInsertedTextAction : ChangeEditorActionHandler.ForEachC
     argument: Argument?,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    return insertDeleteInsertedText(editor, caret, operatorArguments)
+    return insertDeleteInsertedText(editor, context, caret)
   }
 }
 
@@ -48,11 +48,7 @@ public class InsertDeleteInsertedTextAction : ChangeEditorActionHandler.ForEachC
  * @param caret  The caret on which the action is performed
  * @return true if able to delete the text, false if not
  */
-private fun insertDeleteInsertedText(
-  editor: VimEditor,
-  caret: VimCaret,
-  operatorArguments: OperatorArguments,
-): Boolean {
+private fun insertDeleteInsertedText(editor: VimEditor, context: ExecutionContext, caret: VimCaret): Boolean {
   var deleteTo = caret.vimInsertStart.startOffset
   val offset = caret.offset
   if (offset == deleteTo) {
@@ -61,11 +57,11 @@ private fun insertDeleteInsertedText(
   if (deleteTo != -1) {
     injector.changeGroup.deleteRange(
       editor,
+      context,
       caret,
       TextRange(deleteTo, offset),
       SelectionType.CHARACTER_WISE,
       false,
-      operatorArguments,
     )
     return true
   }

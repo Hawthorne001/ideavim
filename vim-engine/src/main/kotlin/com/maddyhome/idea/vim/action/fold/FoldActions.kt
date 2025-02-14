@@ -18,7 +18,7 @@ import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.VimActionHandler
 
 @CommandOrMotion(keys = ["zM"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class VimCollapseAllRegions : VimActionHandler.SingleExecution() {
+class VimCollapseAllRegions : VimActionHandler.SingleExecution() {
 
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
@@ -28,13 +28,37 @@ public class VimCollapseAllRegions : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    injector.actionExecutor.executeAction(injector.actionExecutor.ACTION_COLLAPSE_ALL_REGIONS, context)
+    injector.actionExecutor.executeAction(
+      editor,
+      name = injector.actionExecutor.ACTION_COLLAPSE_ALL_REGIONS,
+      context = context
+    )
+    return true
+  }
+}
+
+@CommandOrMotion(keys = ["za"], modes = [Mode.NORMAL, Mode.VISUAL])
+class VimExpandCollapseToggleRegion : VimActionHandler.SingleExecution() {
+
+  override val type: Command.Type = Command.Type.OTHER_READONLY
+
+  override fun execute(
+    editor: VimEditor,
+    context: ExecutionContext,
+    cmd: Command,
+    operatorArguments: OperatorArguments,
+  ): Boolean {
+    injector.actionExecutor.executeAction(
+      editor,
+      name = injector.actionExecutor.ACTION_EXPAND_COLLAPSE_TOGGLE,
+      context = context
+    )
     return true
   }
 }
 
 @CommandOrMotion(keys = ["zc"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class VimCollapseRegion : VimActionHandler.SingleExecution() {
+class VimCollapseRegion : VimActionHandler.SingleExecution() {
 
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
@@ -44,13 +68,17 @@ public class VimCollapseRegion : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    injector.actionExecutor.executeAction(injector.actionExecutor.ACTION_COLLAPSE_REGION, context)
+    injector.actionExecutor.executeAction(
+      editor,
+      name = injector.actionExecutor.ACTION_COLLAPSE_REGION,
+      context = context
+    )
     return true
   }
 }
 
 @CommandOrMotion(keys = ["zC"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class VimCollapseRegionRecursively : VimActionHandler.SingleExecution() {
+class VimCollapseRegionRecursively : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
   override fun execute(
@@ -59,13 +87,17 @@ public class VimCollapseRegionRecursively : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    injector.actionExecutor.executeAction(injector.actionExecutor.ACTION_COLLAPSE_REGION_RECURSIVELY, context)
+    injector.actionExecutor.executeAction(
+      editor,
+      name = injector.actionExecutor.ACTION_COLLAPSE_REGION_RECURSIVELY,
+      context = context
+    )
     return true
   }
 }
 
 @CommandOrMotion(keys = ["zR"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class VimExpandAllRegions : VimActionHandler.SingleExecution() {
+class VimExpandAllRegions : VimActionHandler.SingleExecution() {
 
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
@@ -75,13 +107,17 @@ public class VimExpandAllRegions : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    injector.actionExecutor.executeAction(injector.actionExecutor.ACTION_EXPAND_ALL_REGIONS, context)
+    injector.actionExecutor.executeAction(
+      editor,
+      name = injector.actionExecutor.ACTION_EXPAND_ALL_REGIONS,
+      context = context
+    )
     return true
   }
 }
 
 @CommandOrMotion(keys = ["zo"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class VimExpandRegion : VimActionHandler.SingleExecution() {
+class VimExpandRegion : VimActionHandler.SingleExecution() {
 
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
@@ -91,13 +127,17 @@ public class VimExpandRegion : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    injector.actionExecutor.executeAction(injector.actionExecutor.ACTION_EXPAND_REGION, context)
+    injector.actionExecutor.executeAction(
+      editor,
+      name = injector.actionExecutor.ACTION_EXPAND_REGION,
+      context = context
+    )
     return true
   }
 }
 
 @CommandOrMotion(keys = ["zO"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class VimExpandRegionRecursively : VimActionHandler.SingleExecution() {
+class VimExpandRegionRecursively : VimActionHandler.SingleExecution() {
 
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
@@ -107,7 +147,11 @@ public class VimExpandRegionRecursively : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    injector.actionExecutor.executeAction(injector.actionExecutor.ACTION_EXPAND_REGION_RECURSIVELY, context)
+    injector.actionExecutor.executeAction(
+      editor,
+      name = injector.actionExecutor.ACTION_EXPAND_REGION_RECURSIVELY,
+      context = context
+    )
     return true
   }
 }

@@ -23,7 +23,7 @@ import com.maddyhome.idea.vim.handler.MotionActionHandler
 import java.util.*
 
 @CommandOrMotion(keys = ["`"], modes = [Mode.NORMAL])
-public class MotionGotoMarkAction : MotionActionHandler.ForEachCaret() {
+class MotionGotoMarkAction : MotionActionHandler.ForEachCaret() {
   override val motionType: MotionType = MotionType.EXCLUSIVE
 
   override val argumentType: Argument.Type = Argument.Type.CHARACTER
@@ -37,7 +37,7 @@ public class MotionGotoMarkAction : MotionActionHandler.ForEachCaret() {
     argument: Argument?,
     operatorArguments: OperatorArguments,
   ): Motion {
-    if (argument == null) return Motion.Error
+    if (argument !is Argument.Character) return Motion.Error
 
     val mark = argument.character
     return injector.motion.moveCaretToMark(caret, mark, false)
@@ -45,7 +45,7 @@ public class MotionGotoMarkAction : MotionActionHandler.ForEachCaret() {
 }
 
 @CommandOrMotion(keys = ["g`"], modes = [Mode.NORMAL])
-public class MotionGotoMarkNoSaveJumpAction : MotionActionHandler.ForEachCaret() {
+class MotionGotoMarkNoSaveJumpAction : MotionActionHandler.ForEachCaret() {
   override val motionType: MotionType = MotionType.EXCLUSIVE
 
   override val argumentType: Argument.Type = Argument.Type.CHARACTER
@@ -57,9 +57,32 @@ public class MotionGotoMarkNoSaveJumpAction : MotionActionHandler.ForEachCaret()
     argument: Argument?,
     operatorArguments: OperatorArguments,
   ): Motion {
-    if (argument == null) return Motion.Error
+    if (argument !is Argument.Character) return Motion.Error
 
     val mark = argument.character
     return injector.motion.moveCaretToMark(caret, mark, false)
   }
+}
+
+@CommandOrMotion(keys = ["]`"], modes = [Mode.NORMAL, Mode.VISUAL, Mode.OP_PENDING])
+class MotionGotoNextMarkAction: MotionGotoRelativeMarkAction(countMultiplier = 1) {
+}
+
+@CommandOrMotion(keys = ["[`"], modes = [Mode.NORMAL, Mode.VISUAL, Mode.OP_PENDING])
+class MotionGotoPreviousMarkAction: MotionGotoRelativeMarkAction(countMultiplier = -1) {
+}
+
+sealed class MotionGotoRelativeMarkAction(private val countMultiplier: Int) : MotionActionHandler.ForEachCaret() {
+  override val motionType: MotionType = MotionType.EXCLUSIVE
+
+  override fun getOffset(
+    editor: VimEditor,
+    caret: ImmutableVimCaret,
+    context: ExecutionContext,
+    argument: Argument?,
+    operatorArguments: OperatorArguments,
+  ): Motion {
+    return injector.motion.moveCaretToMarkRelative(caret, operatorArguments.count1 * countMultiplier)
+  }
+
 }

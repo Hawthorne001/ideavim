@@ -16,17 +16,13 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.VimActionHandler
-import com.maddyhome.idea.vim.helper.pushVisualMode
-import com.maddyhome.idea.vim.helper.setSelectMode
-import com.maddyhome.idea.vim.helper.vimStateMachine
-import com.maddyhome.idea.vim.state.mode.SelectionType
 
 /**
  * @author Alex Plate
  */
 
 @CommandOrMotion(keys = ["<C-G>"], modes = [Mode.VISUAL, Mode.SELECT])
-public class SelectToggleVisualMode : VimActionHandler.SingleExecution() {
+class SelectToggleVisualMode : VimActionHandler.SingleExecution() {
 
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
@@ -36,33 +32,7 @@ public class SelectToggleVisualMode : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    toggleMode(editor)
+    injector.visualMotionGroup.toggleSelectVisual(editor)
     return true
-  }
-
-  public companion object {
-    public fun toggleMode(editor: VimEditor) {
-      val commandState = editor.vimStateMachine
-      val myMode = commandState.mode
-      if (myMode is com.maddyhome.idea.vim.state.mode.Mode.VISUAL) {
-        editor.setSelectMode(myMode.selectionType)
-        if (myMode.selectionType != SelectionType.LINE_WISE) {
-          editor.nativeCarets().forEach {
-            if (it.offset + injector.visualMotionGroup.selectionAdj == it.selectionEnd) {
-              it.moveToInlayAwareOffset(it.offset + injector.visualMotionGroup.selectionAdj)
-            }
-          }
-        }
-      } else if (myMode is com.maddyhome.idea.vim.state.mode.Mode.SELECT) {
-        editor.pushVisualMode(myMode.selectionType)
-        if (myMode.selectionType != SelectionType.LINE_WISE) {
-          editor.nativeCarets().forEach {
-            if (it.offset == it.selectionEnd && it.visualLineStart <= it.offset - injector.visualMotionGroup.selectionAdj) {
-              it.moveToInlayAwareOffset(it.offset - injector.visualMotionGroup.selectionAdj)
-            }
-          }
-        }
-      }
-    }
   }
 }

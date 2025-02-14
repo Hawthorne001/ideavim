@@ -36,6 +36,7 @@ import com.maddyhome.idea.vim.helper.moveToInlayAwareOffset
 import com.maddyhome.idea.vim.ide.isClionNova
 import com.maddyhome.idea.vim.mark.VimMarkConstants.MARK_CHANGE_POS
 import com.maddyhome.idea.vim.newapi.IjVimCaret
+import com.maddyhome.idea.vim.newapi.IjVimCopiedText
 import com.maddyhome.idea.vim.newapi.IjVimEditor
 import com.maddyhome.idea.vim.newapi.ij
 import com.maddyhome.idea.vim.newapi.vim
@@ -46,10 +47,13 @@ import com.maddyhome.idea.vim.put.PutData
 import com.maddyhome.idea.vim.put.VimPasteProvider
 import com.maddyhome.idea.vim.put.VimPutBase
 import com.maddyhome.idea.vim.register.RegisterConstants
+import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.state.mode.isBlock
 import com.maddyhome.idea.vim.state.mode.isChar
 import com.maddyhome.idea.vim.state.mode.isLine
+import com.maddyhome.idea.vim.undo.VimKeyBasedUndoService
+import com.maddyhome.idea.vim.undo.VimTimestampBasedUndoService
 import java.awt.datatransfer.DataFlavor
 
 @Service
@@ -76,13 +80,24 @@ internal class PutGroup : VimPutBase() {
     vimEditor: VimEditor,
     vimContext: ExecutionContext,
     text: ProcessedTextData,
-    subMode: SelectionType,
+    selectionType: SelectionType,
     data: PutData,
     additionalData: Map<String, Any>,
   ) {
     val editor = (vimEditor as IjVimEditor).editor
     val context = vimContext.context as DataContext
     val carets: MutableMap<Caret, RangeMarker> = mutableMapOf()
+    if (injector.vimState.mode is Mode.INSERT) {
+      val nanoTime = System.nanoTime()
+
+      val undo = injector.undo
+      when (undo) {
+        is VimKeyBasedUndoService -> undo.setInsertNonMergeUndoKey()
+        is VimTimestampBasedUndoService -> {
+          vimEditor.forEachCaret { undo.startInsertSequence(it, it.offset, nanoTime) }
+        }
+      }
+    }
     EditorHelper.getOrderedCaretsList(editor).forEach { caret ->
       val startOffset =
         prepareDocumentAndGetStartOffsets(
@@ -112,7 +127,7 @@ internal class PutGroup : VimPutBase() {
       point.dispose()
       if (!caret.isValid) return@forEach
 
-      val caretPossibleEndOffset = lastPastedRegion?.endOffset ?: (startOffset + text.text.length)
+      val caretPossibleEndOffset = lastPastedRegion?.endOffset ?: (startOffset + text.copiedText.text.length)
       val endOffset = if (data.indent) {
         doIndent(
           vimEditor,
@@ -133,7 +148,7 @@ internal class PutGroup : VimPutBase() {
         startOffset,
         endOffset,
         text.typeInRegister,
-        subMode,
+        selectionType,
         data.caretAfterInsertedText,
       )
     }
@@ -164,11 +179,10 @@ internal class PutGroup : VimPutBase() {
     val allContentsBefore = CopyPasteManager.getInstance().allContents
     val sizeBeforeInsert = allContentsBefore.size
     val firstItemBefore = allContentsBefore.firstOrNull()
-    logger.debug { "Transferable classes: ${text.transferableData.joinToString { it.javaClass.name }}" }
-    val origContent: TextBlockTransferable = injector.clipboardManager.setClipboardText(
-      text.text,
-      transferableData = text.transferableData,
-    ) as TextBlockTransferable
+    logger.debug { "Copied text: ${text.copiedText}" }
+    val (textContent, transferableData) = text.copiedText as IjVimCopiedText
+    val origContent: TextBlockTransferable =
+      injector.clipboardManager.setClipboardText(textContent, textContent, transferableData) as TextBlockTransferable
     val allContentsAfter = CopyPasteManager.getInstance().allContents
     val sizeAfterInsert = allContentsAfter.size
     try {
@@ -176,7 +190,7 @@ internal class PutGroup : VimPutBase() {
     } finally {
       val textInClipboard = (firstItemBefore as? TextBlockTransferable)
         ?.getTransferData(DataFlavor.stringFlavor) as? String
-      val textOnTop = textInClipboard != null && textInClipboard != text.text
+      val textOnTop = textInClipboard != null && textInClipboard != text.copiedText.text
       if (sizeBeforeInsert != sizeAfterInsert || textOnTop) {
         // Sometimes an inserted text replaces an existing one. E.g. on insert with + or * register
         (CopyPasteManager.getInstance() as? CopyPasteManagerEx)?.run { removeContent(origContent) }

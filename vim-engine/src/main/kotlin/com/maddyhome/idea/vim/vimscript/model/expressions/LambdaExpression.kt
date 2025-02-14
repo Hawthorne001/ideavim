@@ -10,7 +10,7 @@ package com.maddyhome.idea.vim.vimscript.model.expressions
 
 import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimEditor
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.vimscript.model.Executable
 import com.maddyhome.idea.vim.vimscript.model.VimLContext
 import com.maddyhome.idea.vim.vimscript.model.commands.LetCommand
@@ -22,10 +22,19 @@ import com.maddyhome.idea.vim.vimscript.model.statements.FunctionDeclaration
 import com.maddyhome.idea.vim.vimscript.model.statements.FunctionFlag
 import com.maddyhome.idea.vim.vimscript.model.statements.ReturnStatement
 
-public data class LambdaExpression(val args: List<String>, val expr: Expression) : Expression() {
+data class LambdaExpression(val args: List<String>, val expr: Expression) : Expression() {
 
   override fun evaluate(editor: VimEditor, context: ExecutionContext, vimContext: VimLContext): VimFuncref {
-    val function = FunctionDeclaration(null, getFunctionName(), args, listOf(), buildBody(), false, setOf(FunctionFlag.CLOSURE), true)
+    val function = FunctionDeclaration(
+      null,
+      getFunctionName(),
+      args,
+      listOf(),
+      buildBody(),
+      false,
+      setOf(FunctionFlag.CLOSURE),
+      true
+    )
     function.vimContext = vimContext
     return VimFuncref(DefinedFunctionHandler(function), VimList(mutableListOf()), null, VimFuncref.Type.LAMBDA)
   }
@@ -39,7 +48,7 @@ public data class LambdaExpression(val args: List<String>, val expr: Expression)
     for (argument in args) {
       body.add(
         LetCommand(
-          Ranges(),
+          Range(),
           Variable(Scope.LOCAL_VARIABLE, argument),
           AssignmentOperator.ASSIGNMENT,
           Variable(

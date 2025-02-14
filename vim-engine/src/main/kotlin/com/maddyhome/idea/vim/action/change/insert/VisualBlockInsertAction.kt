@@ -23,7 +23,7 @@ import com.maddyhome.idea.vim.state.mode.SelectionType
  * @author vlan
  */
 @CommandOrMotion(keys = ["I"], modes = [Mode.VISUAL])
-public class VisualBlockInsertAction : VisualOperatorActionHandler.SingleExecution() {
+class VisualBlockInsertAction : VisualOperatorActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.INSERT
 
   override fun executeForAllCarets(
@@ -36,7 +36,7 @@ public class VisualBlockInsertAction : VisualOperatorActionHandler.SingleExecuti
     if (editor.isOneLineMode()) return false
     val vimSelection = caretsAndSelections.values.stream().findFirst().orElse(null) ?: return false
     return if (vimSelection.type == SelectionType.BLOCK_WISE) {
-      injector.changeGroup.blockInsert(editor, context, vimSelection.toVimTextRange(false), false, operatorArguments)
+      injector.changeGroup.initBlockInsert(editor, context, vimSelection.toVimTextRange(false), false)
     } else {
       injector.changeGroup.insertBeforeFirstNonBlank(editor, context)
       true

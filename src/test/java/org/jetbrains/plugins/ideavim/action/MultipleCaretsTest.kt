@@ -17,6 +17,7 @@ import com.maddyhome.idea.vim.newapi.vim
 import com.maddyhome.idea.vim.state.mode.SelectionType
 import org.jetbrains.plugins.ideavim.VimBehaviorDiffers
 import org.jetbrains.plugins.ideavim.VimTestCase
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import kotlin.test.assertNotNull
 
@@ -1816,6 +1817,7 @@ $c five six se${c}ven eight
     )
   }
 
+  @Disabled("Action execution in tests is broken for 2024.2")
   @Test
   fun testInsertNewLineAboveAction() {
     typeTextInFile(
@@ -1842,6 +1844,7 @@ $c five six se${c}ven eight
     )
   }
 
+  @Disabled("Action execution in tests is broken for 2024.2")
   @VimBehaviorDiffers(originalVimAfter = "${c}\n${c}\nabcde\n${c}\n${c}\nabcde\n")
   @Test
   fun testInsertNewLineAboveActionWithMultipleCaretsInLine() {
@@ -1856,6 +1859,7 @@ $c five six se${c}ven eight
     assertState("${c}\nabcde\n${c}\nabcde\n")
   }
 
+  @Disabled("Action execution in tests is broken for 2024.2")
   @Test
   fun testInsertNewLineBelowAction() {
     typeTextInFile(
@@ -2161,7 +2165,9 @@ rtyfg${c}hzxc"""
   fun testPutTextBeforeCursor() {
     val before = "${c}qwe asd ${c}zxc rty ${c}fgh vbn"
     configureByText(before)
-    injector.registerGroup.storeText('*', "fgh", SelectionType.CHARACTER_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "fgh", SelectionType.CHARACTER_WISE)
     typeText(injector.parser.parseKeys("\"*P" + "3l" + "\"*P"))
     val after = "fghqwfg${c}he asd fghzxfg${c}hc rty fghfgfg${c}hh vbn"
     assertState(after)
@@ -2171,9 +2177,18 @@ rtyfg${c}hzxc"""
   fun testPutTextBeforeCursorOverlapRange() {
     val before = "${c}q${c}we asd zxc rty ${c}fgh vbn"
     val editor = configureByText(before)
-    injector.registerGroup.storeText('*', "fgh")
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "fgh")
     VimPlugin.getRegister()
-      .storeText(IjVimEditor(editor), editor.vim.primaryCaret(), TextRange(16, 19), SelectionType.CHARACTER_WISE, false)
+      .storeText(
+        IjVimEditor(editor),
+        context,
+        editor.vim.primaryCaret(),
+        TextRange(16, 19),
+        SelectionType.CHARACTER_WISE,
+        false
+      )
     typeText(injector.parser.parseKeys("\"*P"))
     val after = "fg${c}hqfg${c}hwe asd zxc rty fg${c}hfgh vbn"
     assertState(after)
@@ -2183,7 +2198,9 @@ rtyfg${c}hzxc"""
   fun testPutTextAfterCursor() {
     val before = "${c}qwe asd ${c}zxc rty ${c}fgh vbn"
     configureByText(before)
-    injector.registerGroup.storeText('*', "fgh", SelectionType.CHARACTER_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "fgh", SelectionType.CHARACTER_WISE)
     typeText(injector.parser.parseKeys("\"*p" + "3l" + "2\"*p"))
     val after = "qfghwe fghfg${c}hasd zfghxc fghfg${c}hrty ffghgh fghfg${c}hvbn"
     assertState(after)
@@ -2193,7 +2210,9 @@ rtyfg${c}hzxc"""
   fun testPutTextAfterCursorOverlapRange() {
     val before = "${c}q${c}we asd zxc rty ${c}fgh vbn"
     configureByText(before)
-    injector.registerGroup.storeText('*', "fgh", SelectionType.CHARACTER_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "fgh", SelectionType.CHARACTER_WISE)
     typeText(injector.parser.parseKeys("2\"*p"))
     val after = "qfghfg${c}hwfghfg${c}he asd zxc rty ffghfg${c}hgh vbn"
     assertState(after)
@@ -2208,7 +2227,9 @@ rtyfg${c}hzxc"""
             
     """.trimIndent()
     configureByText(before)
-    injector.registerGroup.storeText('*', "zxcvbn\n", SelectionType.LINE_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "zxcvbn\n", SelectionType.LINE_WISE)
     typeText(injector.parser.parseKeys("\"*P"))
     val after = """
             ${c}zxcvbn
@@ -2342,7 +2363,9 @@ rtyfg${c}hzxc"""
 
   private fun testPutOverlapLine(before: String, after: String, beforeCursor: Boolean) {
     configureByText(before)
-    injector.registerGroup.storeText('*', "zxcvbn\n", SelectionType.LINE_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "zxcvbn\n", SelectionType.LINE_WISE)
     typeText(injector.parser.parseKeys("\"*" + if (beforeCursor) "P" else "p"))
     assertState(after)
   }
@@ -2356,7 +2379,9 @@ rtyfg${c}hzxc"""
             
     """.trimIndent()
     configureByText(before)
-    injector.registerGroup.storeText('*', "zxcvbn", SelectionType.LINE_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "zxcvbn", SelectionType.LINE_WISE)
     typeText(injector.parser.parseKeys("\"*p"))
     val after = """
             qwerty
@@ -2374,7 +2399,9 @@ rtyfg${c}hzxc"""
   fun testPutTextBeforeCursorMoveCursor() {
     val before = "qw${c}e asd z${c}xc rty ${c}fgh vbn"
     configureByText(before)
-    injector.registerGroup.storeText('*', "fgh", SelectionType.CHARACTER_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "fgh", SelectionType.CHARACTER_WISE)
     typeText(injector.parser.parseKeys("l" + "\"*gP" + "b" + "\"*gP"))
     val after = "fgh${c}qwefgh asd fgh${c}zxfghc rty fgh${c}ffghgh vbn"
     assertState(after)
@@ -2384,7 +2411,9 @@ rtyfg${c}hzxc"""
   fun testPutTextAfterCursorMoveCursor() {
     val before = "qw${c}e asd z${c}xc rty ${c}fgh vbn"
     configureByText(before)
-    injector.registerGroup.storeText('*', "fgh", SelectionType.CHARACTER_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "fgh", SelectionType.CHARACTER_WISE)
     typeText(injector.parser.parseKeys("l" + "\"*gp" + "b" + "\"*gp"))
     val after = "qwe ffgh${c}ghasd zfgh${c}xcfgh rty ffgh${c}gfghh vbn"
     assertState(after)
@@ -2399,7 +2428,9 @@ rtyfg${c}hzxc"""
             
     """.trimIndent()
     configureByText(before)
-    injector.registerGroup.storeText('*', "zxcvbn\n", SelectionType.LINE_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "zxcvbn\n", SelectionType.LINE_WISE)
     typeText(injector.parser.parseKeys("\"*gP"))
     val after = """
             zxcvbn
@@ -2422,7 +2453,9 @@ rtyfg${c}hzxc"""
             
     """.trimIndent()
     configureByText(before)
-    injector.registerGroup.storeText('*', "zxcvbn", SelectionType.LINE_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "zxcvbn", SelectionType.LINE_WISE)
     typeText(injector.parser.parseKeys("\"*gp"))
     val after = """
             qwerty
@@ -2442,7 +2475,9 @@ rtyfg${c}hzxc"""
  * two
 """
     configureByText(before)
-    injector.registerGroup.storeText('*', " *\n *\n", SelectionType.BLOCK_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', " *\n *\n", SelectionType.BLOCK_WISE)
     typeText(injector.parser.parseKeys("\"*p"))
     val after = """ * $c *one$c *
  *  *two *
@@ -2456,7 +2491,9 @@ rtyfg${c}hzxc"""
  * two
 """
     configureByText(before)
-    injector.registerGroup.storeText('*', " *\n \n", SelectionType.BLOCK_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', " *\n \n", SelectionType.BLOCK_WISE)
     typeText(injector.parser.parseKeys("\"*P"))
     val after = """ *$c * on$c *e
  *   tw  o
@@ -2475,7 +2512,9 @@ rtyfg${c}hzxc"""
       vb${c}n
     """.trimIndent()
     configureByText(before)
-    injector.registerGroup.storeText('*', "qwe\n", SelectionType.LINE_WISE)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, '*', "qwe\n", SelectionType.LINE_WISE)
     typeText(injector.parser.parseKeys("\"*p"))
     val after = """
       qwe
@@ -2497,7 +2536,10 @@ rtyfg${c}hzxc"""
     val before = "qwe ${c}asd ${c}zxc"
     configureByText(before)
     typeText(injector.parser.parseKeys("ye"))
-    val lastRegister = VimPlugin.getRegister().lastRegister
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    val registerService = injector.registerGroup
+    val lastRegister = registerService.getRegister(vimEditor, context, registerService.lastRegisterChar)
     assertNotNull<Any>(lastRegister)
     val text = lastRegister.text
     assertNotNull<Any>(text)
@@ -2519,7 +2561,10 @@ rtyfg${c}hzxc"""
     """.trimIndent()
     configureByText(before)
     typeText(injector.parser.parseKeys("yj"))
-    val lastRegister = VimPlugin.getRegister().lastRegister
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    val registerService = injector.registerGroup
+    val lastRegister = registerService.getRegister(vimEditor, context, registerService.lastRegisterChar)
     assertNotNull<Any>(lastRegister)
     val text = lastRegister.text
     assertNotNull<Any>(text)
@@ -2553,7 +2598,10 @@ rtyfg${c}hzxc"""
     """.trimIndent()
     configureByText(before)
     typeText(injector.parser.parseKeys("2yy"))
-    val lastRegister = VimPlugin.getRegister().lastRegister
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    val registerService = injector.registerGroup
+    val lastRegister = registerService.getRegister(vimEditor, context, registerService.lastRegisterChar)
     assertNotNull<Any>(lastRegister)
     val text = lastRegister.text
     assertNotNull<Any>(text)

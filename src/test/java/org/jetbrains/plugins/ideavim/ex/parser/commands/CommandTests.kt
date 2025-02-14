@@ -8,8 +8,8 @@
 
 package org.jetbrains.plugins.ideavim.ex.parser.commands
 
-import com.maddyhome.idea.vim.ex.ranges.LineNumberRange
-import com.maddyhome.idea.vim.ex.ranges.MarkRange
+import com.maddyhome.idea.vim.ex.ranges.LineAddress
+import com.maddyhome.idea.vim.ex.ranges.MarkAddress
 import com.maddyhome.idea.vim.vimscript.model.commands.BufferCommand
 import com.maddyhome.idea.vim.vimscript.model.commands.DeleteLinesCommand
 import com.maddyhome.idea.vim.vimscript.model.commands.EchoCommand
@@ -79,9 +79,9 @@ class CommandTests : VimTestCase() {
     assertTrue(command is SubstituteCommand)
     assertEquals("s", command.command)
     assertEquals("/a/b/g", command.argument)
-    assertEquals(2, command.ranges.size())
-    assertEquals(MarkRange('a', 0, false), command.ranges.ranges[0])
-    assertEquals(MarkRange('b', 0, false), command.ranges.ranges[1])
+    assertEquals(2, command.range.size())
+    assertEquals(MarkAddress('a', 0, false), command.range.addresses[0])
+    assertEquals(MarkAddress('b', 0, false), command.range.addresses[1])
   }
 
   // https://github.com/JetBrains/ideavim/discussions/386
@@ -99,9 +99,9 @@ class CommandTests : VimTestCase() {
   fun `spaces in range`(sp1: String, sp2: String, sp3: String) {
     val command = VimscriptParser.parseCommand("10$sp1,${sp2}20${sp3}d")
     assertTrue(command is DeleteLinesCommand)
-    assertEquals(2, command.ranges.size())
-    assertEquals(LineNumberRange(9, 0, false), command.ranges.ranges[0])
-    assertEquals(LineNumberRange(19, 0, false), command.ranges.ranges[1])
+    assertEquals(2, command.range.size())
+    assertEquals(LineAddress(10, 0, false), command.range.addresses[0])
+    assertEquals(LineAddress(20, 0, false), command.range.addresses[1])
   }
 
   // VIM-2450

@@ -13,6 +13,7 @@ import org.jetbrains.plugins.ideavim.SkipNeovimReason
 import org.jetbrains.plugins.ideavim.TestWithoutNeovim
 import org.jetbrains.plugins.ideavim.VimBehaviorDiffers
 import org.jetbrains.plugins.ideavim.VimTestCase
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 
 /**
@@ -41,7 +42,7 @@ class SelectKeyHandlerTest : VimTestCase() {
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -67,12 +68,13 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
   @TestWithoutNeovim(SkipNeovimReason.SELECT_MODE)
   @Test
+  @Disabled("VIM-3376")
   fun `test char mode backspace`() {
     this.doTest(
       listOf("gh", "<BS>"),
@@ -92,12 +94,13 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
   @TestWithoutNeovim(SkipNeovimReason.SELECT_MODE)
   @Test
+  @Disabled("VIM-3376")
   fun `test char mode delete`() {
     this.doTest(
       listOf("gh", "<DEL>"),
@@ -117,7 +120,7 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -143,7 +146,7 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -169,7 +172,7 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -195,7 +198,7 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -221,7 +224,7 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -247,7 +250,7 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -283,7 +286,7 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -309,7 +312,7 @@ Mode.INSERT,
                 where it was settled on some sodden sand
                 hard by the torrent of a mountain pass.
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 

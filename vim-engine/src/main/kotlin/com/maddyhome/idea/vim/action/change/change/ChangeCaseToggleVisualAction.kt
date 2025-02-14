@@ -11,19 +11,19 @@ import com.intellij.vim.annotations.CommandOrMotion
 import com.intellij.vim.annotations.Mode
 import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimCaret
+import com.maddyhome.idea.vim.api.VimChangeGroup
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.group.visual.VimSelection
 import com.maddyhome.idea.vim.handler.VisualOperatorActionHandler
-import com.maddyhome.idea.vim.helper.CharacterHelper
 
 /**
  * @author vlan
  */
 @CommandOrMotion(keys = ["~"], modes = [Mode.VISUAL])
-public class ChangeCaseToggleVisualAction : VisualOperatorActionHandler.ForEachCaret() {
+class ChangeCaseToggleVisualAction : VisualOperatorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.CHANGE
 
   override fun executeAction(
@@ -35,6 +35,6 @@ public class ChangeCaseToggleVisualAction : VisualOperatorActionHandler.ForEachC
     operatorArguments: OperatorArguments,
   ): Boolean {
     return injector.changeGroup
-      .changeCaseRange(editor, caret, range.toVimTextRange(false), CharacterHelper.CASE_TOGGLE)
+      .changeCaseRange(editor, caret, range.toVimTextRange(false), VimChangeGroup.ChangeCaseType.TOGGLE)
   }
 }

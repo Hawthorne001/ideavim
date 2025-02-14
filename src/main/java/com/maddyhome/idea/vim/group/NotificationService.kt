@@ -182,8 +182,8 @@ internal class NotificationService(private val project: Project?) {
     ).notify(project)
   }
 
-  fun notifyActionId(id: String?) {
-    ActionIdNotifier.notifyActionId(id, project)
+  fun notifyActionId(id: String?, candidates: List<String>? = null) {
+    ActionIdNotifier.notifyActionId(id, project, candidates)
   }
 
   fun notifyKeymapIssues(issues: ArrayList<KeyMapIssue>) {
@@ -196,6 +196,7 @@ internal class NotificationService(private val project: Project?) {
           is KeyMapIssue.AddShortcut -> {
             appendLine("- ${it.key} key is not assigned to the ${it.action} action.<br/>")
           }
+
           is KeyMapIssue.RemoveShortcut -> {
             appendLine("- ${it.shortcut} key is incorrectly assigned to the ${it.action} action.<br/>")
           }
@@ -259,30 +260,43 @@ internal class NotificationService(private val project: Project?) {
 
   object ActionIdNotifier {
     private var notification: Notification? = null
-    private const val NO_ID = "<i>Cannot detect action id</i>"
 
-    fun notifyActionId(id: String?, project: Project?) {
+    fun notifyActionId(id: String?, project: Project?, candidates: List<String>? = null) {
       notification?.expire()
 
-      val content = if (id != null) "Action id: $id" else NO_ID
-      Notification(IDEAVIM_NOTIFICATION_ID, IDEAVIM_NOTIFICATION_TITLE, content, NotificationType.INFORMATION).let {
-        notification = it
-        it.whenExpired { notification = null }
-        it.setContent(it.content + "<br><br><small>Use ${ActionCenter.getToolwindowName()} to see previous ids</small>")
+      val possibleIDs = candidates?.distinct()?.sorted()
+      val content = when {
+        id != null -> "Action ID: <code>$id</code><br><br>"
+        possibleIDs.isNullOrEmpty() -> "<i>Cannot detect action ID</i><br><br>"
+        possibleIDs.size == 1 -> "Possible action ID: <code>${possibleIDs[0]}</code><br><br>"
+        else -> {
+          buildString {
+            append("<p>Multiple possible action IDs. Candidates include:<ul>")
+            possibleIDs.forEach { append("<li><code>$it</code></li>") }
+            append("</ul></p>")
+          }
+        }
+      } + "<small>See the ${ActionCenter.getToolwindowName()} tool window for previous IDs</small>"
 
-        it.addAction(StopTracking())
+      notification =
+        Notification(IDEAVIM_NOTIFICATION_ID, IDEAVIM_NOTIFICATION_TITLE, content, NotificationType.INFORMATION).also {
+          it.whenExpired { notification = null }
+          it.addAction(StopTracking())
 
-        if (id != null) it.addAction(CopyActionId(id, project))
+          if (id != null || possibleIDs?.size == 1) {
+            it.addAction(CopyActionId(id ?: possibleIDs?.get(0), project))
+          }
 
-        it.notify(project)
-      }
+          it.notify(project)
+        }
 
       if (id != null) {
         ActionTracker.Util.logTrackedAction(id)
       }
     }
 
-    class CopyActionId(val id: String?, val project: Project?) : DumbAwareAction(MessageHelper.message("action.copy.action.id.text")) {
+    class CopyActionId(val id: String?, val project: Project?) :
+      DumbAwareAction(MessageHelper.message("action.copy.action.id.text")) {
       override fun actionPerformed(e: AnActionEvent) {
         CopyPasteManager.getInstance().setContents(StringSelection(id ?: ""))
         if (id != null) {

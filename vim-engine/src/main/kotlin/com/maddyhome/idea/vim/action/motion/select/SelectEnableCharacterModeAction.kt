@@ -25,7 +25,7 @@ import com.maddyhome.idea.vim.state.mode.SelectionType
  */
 
 @CommandOrMotion(keys = ["gh"], modes = [Mode.NORMAL])
-public class SelectEnableCharacterModeAction : VimActionHandler.SingleExecution() {
+class SelectEnableCharacterModeAction : VimActionHandler.SingleExecution() {
 
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
@@ -37,10 +37,10 @@ public class SelectEnableCharacterModeAction : VimActionHandler.SingleExecution(
   ): Boolean {
     editor.nativeCarets().sortedByDescending { it.offset }.forEach { caret ->
       val lineEnd = editor.getLineEndForOffset(caret.offset)
-      caret.run {
-        vimSetSystemSelectionSilently(offset, (offset + 1).coerceAtMost(lineEnd))
-        moveToInlayAwareOffset((offset + 1).coerceAtMost(lineEnd))
-      }
+      val offset = caret.offset
+      val nextOffset = (caret.offset + 1).coerceAtMost(lineEnd)
+      val updatedCaret = caret.moveToInlayAwareOffset(nextOffset)
+      updatedCaret.vimSetSystemSelectionSilently(offset, nextOffset)
     }
     return injector.visualMotionGroup.enterSelectMode(editor, SelectionType.CHARACTER_WISE)
   }

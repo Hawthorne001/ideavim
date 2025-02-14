@@ -13,13 +13,13 @@ import com.maddyhome.idea.vim.handler.EditorActionHandlerBase
 import com.maddyhome.idea.vim.vimscript.model.LazyInstance
 import javax.swing.KeyStroke
 
-public open class LazyVimCommand(
-  public val keys: Set<List<KeyStroke>>,
-  public val modes: Set<MappingMode>,
+open class LazyVimCommand(
+  val keys: Set<List<KeyStroke>>,
+  val modes: Set<MappingMode>,
   className: String,
   classLoader: ClassLoader,
 ) : LazyInstance<EditorActionHandlerBase>(className, classLoader) {
-  public val actionId: String = EditorActionHandlerBase.getActionId(className)
+  val actionId: String = EditorActionHandlerBase.getActionId(className)
 
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
@@ -39,5 +39,9 @@ public open class LazyVimCommand(
     result = 31 * result + modes.hashCode()
     result = 31 * result + actionId.hashCode()
     return result
+  }
+
+  override fun toString(): String {
+    return actionId
   }
 }

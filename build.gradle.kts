@@ -32,6 +32,8 @@ import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.RepositoryBuilder
 import org.intellij.markdown.ast.getTextInNode
 import org.jetbrains.changelog.Changelog
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.aware.SplitModeAware
 import org.kohsuke.github.GHUser
 import java.net.HttpURLConnection
 import java.net.URL
@@ -43,19 +45,19 @@ buildscript {
   }
 
   dependencies {
-    classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22")
+    classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0")
     classpath("com.github.AlexPl292:mark-down-to-slack:1.1.2")
     classpath("org.eclipse.jgit:org.eclipse.jgit:6.6.0.202305301015-r")
 
     // This is needed for jgit to connect to ssh
-    classpath("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:6.9.0.202403050737-r")
+    classpath("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.1.0.202411261347-r")
     classpath("org.kohsuke:github-api:1.305")
 
-    classpath("io.ktor:ktor-client-core:2.3.10")
-    classpath("io.ktor:ktor-client-cio:2.3.10")
-    classpath("io.ktor:ktor-client-auth:2.3.9")
-    classpath("io.ktor:ktor-client-content-negotiation:2.3.9")
-    classpath("io.ktor:ktor-serialization-kotlinx-json:2.3.10")
+    classpath("io.ktor:ktor-client-core:3.0.3")
+    classpath("io.ktor:ktor-client-cio:3.0.3")
+    classpath("io.ktor:ktor-client-auth:3.0.3")
+    classpath("io.ktor:ktor-client-content-negotiation:3.0.3")
+    classpath("io.ktor:ktor-serialization-kotlinx-json:3.0.3")
 
     // This comes from the changelog plugin
 //        classpath("org.jetbrains:markdown:0.3.1")
@@ -63,44 +65,25 @@ buildscript {
 }
 
 plugins {
-  antlr
   java
-  kotlin("jvm") version "1.9.22"
+  kotlin("jvm") version "2.0.0"
   application
   id("java-test-fixtures")
-
-  id("org.jetbrains.intellij") version "1.17.3"
-  id("org.jetbrains.changelog") version "2.2.0"
-
+  id("org.jetbrains.intellij.platform") version "2.2.1"
+  id("org.jetbrains.changelog") version "2.2.1"
   id("org.jetbrains.kotlinx.kover") version "0.6.1"
-  id("com.dorongold.task-tree") version "3.0.0"
-
-  id("com.google.devtools.ksp") version "1.9.22-1.0.17"
+  id("com.dorongold.task-tree") version "4.0.0"
+  id("com.google.devtools.ksp") version "2.0.0-1.0.23"
 }
 
-ksp {
-  arg("generated_directory", "$projectDir/src/main/resources/ksp-generated")
-  arg("vimscript_functions_file", "intellij_vimscript_functions.json")
-  arg("ex_commands_file", "intellij_ex_commands.json")
-  arg("commands_file", "intellij_commands.json")
-}
-
-afterEvaluate {
-//  tasks.named("kspKotlin").configure { dependsOn("clean") }
-  tasks.named("kspKotlin").configure { dependsOn("generateGrammarSource") }
-  tasks.named("kspTestFixturesKotlin").configure { enabled = false }
-  tasks.named("kspTestFixturesKotlin").configure { enabled = false }
-  tasks.named("kspTestKotlin").configure { enabled = false }
-}
+val moduleSources by configurations.registering
 
 // Import variables from gradle.properties file
 val javaVersion: String by project
 val kotlinVersion: String by project
 val ideaVersion: String by project
 val ideaType: String by project
-val downloadIdeaSources: String by project
 val instrumentPluginCode: String by project
-val antlrVersion: String by project
 val remoteRobotVersion: String by project
 
 val publishChannels: String by project
@@ -109,24 +92,60 @@ val publishToken: String by project
 val slackUrl: String by project
 val youtrackToken: String by project
 
+val releaseType: String? by project
+
 repositories {
   mavenCentral()
-  maven { url = uri("https://cache-redirector.jetbrains.com/intellij-dependencies") }
+  intellijPlatform {
+    defaultRepositories()
+  }
 }
 
 dependencies {
   api(project(":vim-engine"))
   ksp(project(":annotation-processors"))
-  implementation(project(":annotation-processors"))
+  compileOnly(project(":annotation-processors"))
 
   compileOnly("org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion")
-  compileOnly("org.jetbrains:annotations:24.1.0")
-  runtimeOnly("org.antlr:antlr4-runtime:$antlrVersion")
-  antlr("org.antlr:antlr4:$antlrVersion")
+  compileOnly("org.jetbrains:annotations:26.0.2")
+
+  intellijPlatform {
+    // Snapshots don't use installers
+    // https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html#target-versions-installers
+    val useInstaller = "EAP-SNAPSHOT" !in ideaVersion
+
+    // Note that it is also possible to use local("...") to compile against a locally installed IDE
+    // E.g. local("/Users/{user}/Applications/IntelliJ IDEA Ultimate.app")
+    // Or something like: intellijIdeaUltimate(ideaVersion)
+    create(ideaType, ideaVersion, useInstaller)
+
+    pluginVerifier()
+    zipSigner()
+
+    testFramework(TestFrameworkType.Platform)
+    testFramework(TestFrameworkType.JUnit5)
+
+    // AceJump is an optional dependency. We use their SessionManager class to check if it's active
+    plugin("AceJump", "3.8.19")
+
+    // [VERSION UPDATE] 2024.3+
+    // Dirty hack: in 2024.3+ the json plugin is extracted. So, the tests that use JSON don't work.
+    // If the IdeaVim minimal version is bumped to 2024.3, leave only `bundledPlugins...` line
+    // If we start to support a new version like 2024.2.2 or 2025.1.1, please add it to the correct branch of this when
+    // This check intentionally has a pattern where we explicitly specify if to use the JSON plugin for each
+    //   supported version or not to prevent developers from figuring out what happened with JSON.
+    when (ideaVersion) {
+      "2024.2.1" -> { /* Nothing */ }
+      "LATEST-EAP-SNAPSHOT", "2024.3", "2024.3.2.2" -> bundledPlugins("com.intellij.modules.json")
+      else -> error("Unsupported version: $ideaVersion")
+    }
+
+    bundledPlugins("org.jetbrains.plugins.terminal")
+  }
+
+  moduleSources(project(":vim-engine", "sourcesJarArtifacts"))
 
   // --------- Test dependencies ----------
-
-  testImplementation(testFixtures(project(":")))
 
   testApi("com.squareup.okhttp3:okhttp:4.12.0")
 
@@ -141,14 +160,20 @@ dependencies {
   testFixturesImplementation("org.jetbrains.kotlin:kotlin-test:$kotlinVersion")
 
   // https://mvnrepository.com/artifact/org.mockito.kotlin/mockito-kotlin
-  testImplementation("org.mockito.kotlin:mockito-kotlin:5.3.1")
+  testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 
-  testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
-  testImplementation("org.junit.jupiter:junit-jupiter-engine:5.10.2")
-  testImplementation("org.junit.jupiter:junit-jupiter-params:5.10.2")
-  testFixturesImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
-  testFixturesImplementation("org.junit.jupiter:junit-jupiter-engine:5.10.2")
-  testFixturesImplementation("org.junit.jupiter:junit-jupiter-params:5.10.2")
+  testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.5")
+  testImplementation("org.junit.jupiter:junit-jupiter-engine:5.10.5")
+  testImplementation("org.junit.jupiter:junit-jupiter-params:5.10.5")
+  testFixturesImplementation("org.junit.jupiter:junit-jupiter-api:5.10.5")
+  testFixturesImplementation("org.junit.jupiter:junit-jupiter-engine:5.10.5")
+  testFixturesImplementation("org.junit.jupiter:junit-jupiter-params:5.10.5")
+
+  // Temp workaround suggested in https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-faq.html#junit5-test-framework-refers-to-junit4
+  // Can be removed when IJPL-159134 is fixed
+//  testRuntimeOnly("junit:junit:4.13.2")
+  testImplementation("org.junit.vintage:junit-vintage-engine:5.10.5")
+//  testFixturesImplementation("org.junit.vintage:junit-vintage-engine:5.10.3")
 }
 
 configurations {
@@ -159,6 +184,8 @@ configurations {
 
 tasks {
   test {
+    useJUnitPlatform()
+
     // Set teamcity env variable locally to run additional tests for leaks.
     // By default, this test runs on TC only, but this test doesn't take a lot of time,
     //   so we can turn it on for local development
@@ -171,6 +198,9 @@ tasks {
   }
 
   compileJava {
+    // CodeQL can't resolve the 'by project' property, so we need to give it a hint. This is the minimum version we need
+    // so doesn't have to match exactly
+    // Hint for the CodeQL autobuilder: sourceCompatibility = 17
     sourceCompatibility = javaVersion
     targetCompatibility = javaVersion
 
@@ -183,7 +213,14 @@ tasks {
       // See https://plugins.jetbrains.com/docs/intellij/using-kotlin.html#kotlin-standard-library
       // For the list of bundled versions
       apiVersion = "1.9"
-      freeCompilerArgs = listOf("-Xjvm-default=all-compatibility")
+      freeCompilerArgs = listOf(
+        "-Xjvm-default=all-compatibility",
+
+        // Needed to compile the AceJump which uses kotlin beta
+        //  Without these two option compilation fails
+        "-Xskip-prerelease-check",
+        "-Xallow-unstable-dependencies",
+      )
 //            allWarningsAsErrors = true
     }
   }
@@ -192,25 +229,73 @@ tasks {
     kotlinOptions {
       jvmTarget = javaVersion
       apiVersion = "1.9"
+
+      // Needed to compile the AceJump which uses kotlin beta
+      //  Without these two option compilation fails
+      freeCompilerArgs += listOf("-Xskip-prerelease-check", "-Xallow-unstable-dependencies")
 //            allWarningsAsErrors = true
     }
   }
 
-  downloadRobotServerPlugin {
-    version.set(remoteRobotVersion)
-  }
-
-  runIdeForUiTests {
-    systemProperty("robot-server.port", "8082")
-    systemProperty("ide.mac.message.dialogs.as.sheets", "false")
-    systemProperty("jb.privacy.policy.text", "<!--999.999-->")
-    systemProperty("jb.consents.confirmation.enabled", "false")
-    systemProperty("ide.show.tips.on.startup.default.value", "false")
-    systemProperty("octopus.handler", System.getProperty("octopus.handler") ?: true)
-  }
-
+  // Note that this will run the plugin installed in the IDE specified in dependencies. To run in a different IDE, use
+  // a custom task (see below)
   runIde {
     systemProperty("octopus.handler", System.getProperty("octopus.handler") ?: true)
+  }
+
+  // Uncomment to run the plugin in a custom IDE, rather than the IDE specified as a compile target in dependencies
+  // Note that the version must be greater than the plugin's target version, for obvious reasons
+  // You can also set splitMode and splitModeTarget here to test split mode in a custom IDE
+//  val runIdeCustom by intellijPlatformTesting.runIde.registering {
+//    type = IntelliJPlatformType.Rider
+//    version = "2024.1.2"
+//  }
+
+  // Uncomment to run the plugin in a locally installed IDE
+//  val runIdeLocal by intellijPlatformTesting.runIde.registering {
+//    localPath = file("/Users/{user}/Applications/WebStorm.app")
+//  }
+
+  val runIdeForUiTests by intellijPlatformTesting.runIde.registering {
+    task {
+      jvmArgumentProviders += CommandLineArgumentProvider {
+        listOf(
+          "-Drobot-server.port=8082",
+          "-Dide.mac.message.dialogs.as.sheets=false",
+          "-Djb.privacy.policy.text=<!--999.999-->",
+          "-Djb.consents.confirmation.enabled=false",
+          "-Dide.show.tips.on.startup.default.value=false",
+          "-Doctopus.handler=" + (System.getProperty("octopus.handler") ?: true),
+        )
+      }
+    }
+
+    plugins {
+      robotServerPlugin(remoteRobotVersion)
+    }
+  }
+
+  val runIdeSplitMode by intellijPlatformTesting.runIde.registering {
+    splitMode = true
+    splitModeTarget = SplitModeAware.SplitModeTarget.FRONTEND
+  }
+
+  // Add plugin open API sources to the plugin ZIP
+  val sourcesJar by registering(Jar::class) {
+    dependsOn(moduleSources)
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
+    archiveClassifier.set(DocsType.SOURCES)
+    from(sourceSets.main.map { it.kotlin })
+    from(provider {
+      moduleSources.map {
+        it.map { jarFile -> zipTree(jarFile) }
+      }
+    })
+  }
+
+  buildPlugin {
+    dependsOn(sourcesJar)
+    from(sourcesJar) { into("lib/src") }
   }
 }
 
@@ -221,7 +306,6 @@ java {
 }
 
 kotlin {
-  explicitApi()
   jvmToolchain {
     languageVersion.set(JavaLanguageVersion.of(javaVersion))
   }
@@ -236,95 +320,67 @@ gradle.projectsEvaluated {
 
 // --- Intellij plugin
 
-intellij {
-  version.set(ideaVersion)
-  type.set(ideaType)
-  pluginName.set("IdeaVim")
+intellijPlatform {
+  pluginConfiguration {
+    name = "IdeaVim"
+    changeNotes.set(
+      """
+        Undo in IdeaVim now works like in Vim<br/>
+        Caret movement is no longer a separate undo step, and full insert is undoable in one step.<br/>
+        <a href="https://youtrack.jetbrains.com/issue/VIM-547/Undo-splits-Insert-mode-edits-into-separate-undo-chunks">Share Feedback</a>
+        <br/>
+        <br/>
+        <a href="https://youtrack.jetbrains.com/issues/VIM?q=State:%20Fixed%20Fix%20versions:%20${version.get()}">Changelog</a>
+        """.trimIndent()
+    )
 
-  updateSinceUntilBuild.set(false)
+    ideaVersion {
+      // Let the Gradle plugin set the since-build version. It defaults to the version of the IDE we're building against
+      // specified as two components, `{branch}.{build}` (e.g., "241.15989"). There is no third component specified.
+      // The until-build version defaults to `{branch}.*`, but we want to support _all_ future versions, so we set it
+      // with a null provider (the provider is important).
+      // By letting the Gradle plugin handle this, the Plugin DevKit IntelliJ plugin cannot help us with the "Usage of
+      // IntelliJ API not available in older IDEs" inspection. However, since our since-build is the version we compile
+      // against, we can never get an API that's newer - it would be an unresolved symbol.
+      untilBuild.set(provider { null })
+    }
+  }
 
-  downloadSources.set(downloadIdeaSources.toBoolean())
-  instrumentCode.set(instrumentPluginCode.toBoolean())
-  intellijRepository.set("https://www.jetbrains.com/intellij-repository")
-  plugins.set(listOf("AceJump:3.8.11"))
-}
-
-tasks {
-  publishPlugin {
+  publishing {
     channels.set(publishChannels.split(","))
     token.set(publishToken)
   }
 
-  signPlugin {
+  signing {
     certificateChain.set(providers.environmentVariable("CERTIFICATE_CHAIN"))
     privateKey.set(providers.environmentVariable("PRIVATE_KEY"))
     password.set(providers.environmentVariable("PRIVATE_KEY_PASSWORD"))
   }
 
-  runPluginVerifier {
-    downloadDir.set("${project.buildDir}/pluginVerifier/ides")
-    teamCityOutputFormat.set(true)
-  }
-
-  generateGrammarSource {
-    maxHeapSize = "128m"
-    arguments.addAll(listOf("-package", "com.maddyhome.idea.vim.vimscript.parser.generated", "-visitor"))
-    outputDirectory = file("src/main/java/com/maddyhome/idea/vim/vimscript/parser/generated")
-  }
-
-  named("compileKotlin") {
-    dependsOn("generateGrammarSource")
-  }
-  named("compileTestKotlin") {
-    dependsOn("generateTestGrammarSource")
-  }
-  named("compileTestFixturesKotlin") {
-    dependsOn("generateTestFixturesGrammarSource")
-  }
-
-  // Add plugin open API sources to the plugin ZIP
-  val createOpenApiSourceJar by registering(Jar::class) {
-    dependsOn("generateGrammarSource")
-    // Java sources
-    from(sourceSets.main.get().java) {
-      include("**/com/maddyhome/idea/vim/**/*.java")
+  verifyPlugin {
+    teamCityOutputFormat = true
+    ides {
+      recommended()
     }
-    from(project(":vim-engine").sourceSets.main.get().java) {
-      include("**/com/maddyhome/idea/vim/**/*.java")
-    }
-    // Kotlin sources
-    from(kotlin.sourceSets.main.get().kotlin) {
-      include("**/com/maddyhome/idea/vim/**/*.kt")
-    }
-    from(project(":vim-engine").kotlin.sourceSets.main.get().kotlin) {
-      include("**/com/maddyhome/idea/vim/**/*.kt")
-    }
-    destinationDirectory.set(layout.buildDirectory.dir("libs"))
-    archiveClassifier.set("src")
   }
 
-  buildPlugin {
-    dependsOn(createOpenApiSourceJar)
-    from(createOpenApiSourceJar) { into("lib/src") }
-  }
-
-  patchPluginXml {
-    // Don't forget to update plugin.xml
-    sinceBuild.set("233.11799.67")
-
-    changeNotes.set(
-      """<a href="https://youtrack.jetbrains.com/issues/VIM?q=State:%20Fixed%20Fix%20versions:%20${version.get()}">Changelog</a>"""
-    )
-  }
+  instrumentCode.set(instrumentPluginCode.toBoolean())
 }
 
-// --- Tests
-
-tasks {
-  test {
-    useJUnitPlatform()
-  }
+ksp {
+  arg("generated_directory", "$projectDir/src/main/resources/ksp-generated")
+  arg("vimscript_functions_file", "intellij_vimscript_functions.json")
+  arg("ex_commands_file", "intellij_ex_commands.json")
+  arg("commands_file", "intellij_commands.json")
 }
+
+afterEvaluate {
+//  tasks.named("kspKotlin").configure { dependsOn("clean") }
+  tasks.named("kspTestFixturesKotlin").configure { enabled = false }
+  tasks.named("kspTestFixturesKotlin").configure { enabled = false }
+  tasks.named("kspTestKotlin").configure { enabled = false }
+}
+
 
 // --- Changelog
 
@@ -451,6 +507,8 @@ val fixVersionsElementType = "VersionBundleElement"
 tasks.register("releaseActions") {
   group = "other"
   doLast {
+    if (releaseType == "patch") return@doLast
+
     val tickets = getYoutrackTicketsByQuery("%23%7BReady+To+Release%7D%20and%20tag:%20%7BIdeaVim%20Released%20In%20EAP%7D%20")
     if (tickets.isNotEmpty()) {
       println("Updating statuses for tickets: $tickets")
@@ -780,7 +838,7 @@ fun updateAuthors(uncheckedEmails: Set<String>) {
 }
 
 fun List<Author>.toMdString(): String {
-  return this.joinToString {
+  return this.joinToString(separator = "") {
     """
           |
           |* [![icon][mail]](mailto:${it.mail})
@@ -910,12 +968,12 @@ fun changes(): List<Change> {
   println("Start changes processing")
   for (message in messages) {
     println("Processing '$message'...")
-    val lowercaseMessage = message.toLowerCase()
+    val lowercaseMessage = message.lowercase()
     val regex = "^fix\\((vim-\\d+)\\):".toRegex()
     val findResult = regex.find(lowercaseMessage)
     if (findResult != null) {
       println("Message matches")
-      val value = findResult.groups[1]!!.value.toUpperCase()
+      val value = findResult.groups[1]!!.value.uppercase()
       val shortMessage = message.drop(findResult.range.last + 1).trim()
       newFixes += Change(value, shortMessage)
     } else {

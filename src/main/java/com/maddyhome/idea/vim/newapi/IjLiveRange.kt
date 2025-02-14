@@ -14,10 +14,31 @@ import com.maddyhome.idea.vim.common.LiveRange
 internal class IjLiveRange(val marker: RangeMarker) : LiveRange {
   override val startOffset: Int
     get() = marker.startOffset
+
+  override val endOffset: Int
+    get() = marker.endOffset
+
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (javaClass != other?.javaClass) return false
+
+    other as IjLiveRange
+
+    if (startOffset != other.startOffset) return false
+    if (endOffset != other.endOffset) return false
+
+    return true
+  }
+
+  override fun hashCode(): Int {
+    var result = startOffset
+    result = 31 * result + endOffset
+    return result
+  }
 }
 
-public val RangeMarker.vim: LiveRange
+val RangeMarker.vim: LiveRange
   get() = IjLiveRange(this)
 
-public val LiveRange.ij: RangeMarker
+val LiveRange.ij: RangeMarker
   get() = (this as IjLiveRange).marker

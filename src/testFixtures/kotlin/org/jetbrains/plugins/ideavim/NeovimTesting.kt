@@ -15,8 +15,8 @@ import com.ensarsarajcic.neovim.java.corerpc.client.ProcessRpcConnection
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.LogicalPosition
 import com.maddyhome.idea.vim.VimPlugin
+import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.common.CharacterPosition
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.newapi.vim
 import com.maddyhome.idea.vim.register.RegisterConstants.ALTERNATE_BUFFER_REGISTER
 import com.maddyhome.idea.vim.register.RegisterConstants.BLACK_HOLE_REGISTER
@@ -28,8 +28,8 @@ import com.maddyhome.idea.vim.register.RegisterConstants.LAST_SEARCH_REGISTER
 import com.maddyhome.idea.vim.register.RegisterConstants.VALID_REGISTERS
 import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.state.mode.toVimNotation
-import org.junit.Assert.assertEquals
 import org.junit.jupiter.api.TestInfo
+import kotlin.test.assertEquals
 
 object NeovimTesting {
   private lateinit var neovimApi: NeovimApi
@@ -104,7 +104,7 @@ object NeovimTesting {
       singleCaret
   }
 
-  fun isNeovimTestingEnabled(): Boolean {
+  private fun isNeovimTestingEnabled(): Boolean {
     val property = System.getProperty("ideavim.nvim.test", "false")
     val neovimTestingEnabled = if (property.isBlank()) true else property.toBoolean()
     return neovimTestingEnabled
@@ -138,7 +138,7 @@ object NeovimTesting {
     assertText(editor)
     assertCaret(editor, test)
     assertMode(editor)
-    assertRegisters()
+    assertRegisters(editor)
   }
 
   fun setRegister(register: Char, keys: String, test: TestInfo) {
@@ -165,10 +165,10 @@ object NeovimTesting {
     assertEquals(neovimContent, editor.document.text)
   }
 
-  public fun vimMode() = neovimApi.mode.get().mode
+  fun vimMode() = neovimApi.mode.get().mode
 
   private fun assertMode(editor: Editor) {
-    val ideavimState = editor.vim.vimStateMachine.mode.toVimNotation()
+    val ideavimState = editor.vim.mode.toVimNotation()
     val neovimState = vimMode()
     assertEquals(neovimState, ideavimState)
   }
@@ -182,14 +182,16 @@ object NeovimTesting {
       EXPRESSION_BUFFER_REGISTER +
       CURRENT_FILENAME_REGISTER
 
-  private fun assertRegisters() {
+  private fun assertRegisters(editor: Editor) {
     for (register in VALID_REGISTERS) {
       if (register in nonCheckingRegisters) continue
       if (register in VimTestCase.Checks.neoVim.ignoredRegisters) continue
       val neovimRegister = getRegister(register)
-      val vimPluginRegister = VimPlugin.getRegister().getRegister(register)
+      val vimEditor = editor.vim
+      val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+      val vimPluginRegister = VimPlugin.getRegister().getRegister(vimEditor, context, register)
       val ideavimRegister = vimPluginRegister?.text ?: ""
-      assertEquals("Register '$register'", neovimRegister, ideavimRegister)
+      assertEquals(neovimRegister, ideavimRegister, "Register '$register'")
 
       if (neovimRegister.isNotEmpty()) {
         val neovimRegisterType = neovimApi.callFunction("getregtype", listOf(register)).get().toString()
@@ -202,13 +204,13 @@ object NeovimTesting {
 
         // We take only the first char because neovim returns width for block selection
         val neovimChar = neovimRegisterType.getOrNull(0)?.toString() ?: ""
-        assertEquals("Register '$register'", expectedType, neovimChar)
+        assertEquals(expectedType, neovimChar, "Register '$register'")
       }
     }
   }
 
-  public fun getRegister(register: Char) = neovimApi.callFunction("getreg", listOf(register)).get().toString()
-  public fun getMark(register: String) = neovimApi.callFunction("getpos", listOf(register)).get().toString()
+  fun getRegister(register: Char) = neovimApi.callFunction("getreg", listOf(register)).get().toString()
+  fun getMark(register: String) = neovimApi.callFunction("getpos", listOf(register)).get().toString()
 }
 
 annotation class TestWithoutNeovim(val reason: SkipNeovimReason, val description: String = "")

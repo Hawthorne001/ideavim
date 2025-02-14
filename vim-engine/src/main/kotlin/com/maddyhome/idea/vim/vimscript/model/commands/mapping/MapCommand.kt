@@ -16,10 +16,12 @@ import com.maddyhome.idea.vim.command.MappingMode
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.diagnostic.vimLogger
 import com.maddyhome.idea.vim.ex.ExException
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.exExceptionMessage
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.key.MappingOwner
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 import com.maddyhome.idea.vim.vimscript.model.commands.Command
+import com.maddyhome.idea.vim.vimscript.model.commands.CommandModifier
 import com.maddyhome.idea.vim.vimscript.model.commands.mapping.MapCommand.SpecialArgument.EXPR
 import com.maddyhome.idea.vim.vimscript.model.commands.mapping.MapCommand.SpecialArgument.SCRIPT
 import com.maddyhome.idea.vim.vimscript.model.expressions.Expression
@@ -31,25 +33,44 @@ import javax.swing.KeyStroke
 /**
  * @author vlan
  */
-@ExCommand(command = "map,nm[ap],vm[ap],xm[ap],smap,om[ap],im[ap],lm[ap],cm[ap],no[map],nn[oremap],vn[oremap],xn[oremap],snor[emap],ono[remap],no[remap],ino[remap],ln[oremap],cno[remap]")
-public data class MapCommand(val ranges: Ranges, val argument: String, val cmd: String) : Command.SingleExecution(ranges, argument) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
+@ExCommand(command = "map,nm[ap],vm[ap],xm[ap],smap,om[ap],im[ap],lm[ap],cm[ap],nn[oremap],vn[oremap],xn[oremap],snor[emap],ono[remap],no[remap],ino[remap],ln[oremap],cno[remap]")
+data class MapCommand(val range: Range, val cmd: String, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier, argument) {
+
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
 
   @Throws(ExException::class)
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     return if (executeCommand(editor)) ExecutionResult.Success else ExecutionResult.Error
   }
 
   @Throws(ExException::class)
-  private fun executeCommand(editor: VimEditor?): Boolean {
-    val commandInfo = COMMAND_INFOS.find { cmd.startsWith(it.prefix) } ?: return false
+  private fun executeCommand(editor: VimEditor): Boolean {
+    val bang = modifier == CommandModifier.BANG
+    val commandInfo = COMMAND_INFOS.find { cmd.startsWith(it.prefix) && it.bang == bang }
+    if (commandInfo == null) {
+      if (modifier == CommandModifier.BANG) throw exExceptionMessage("E477") // E477: No ! allowed
+      return false
+    }
+
     val modes = commandInfo.mappingModes
 
-    if (argument.isEmpty()) return editor != null && injector.keyGroup.showKeyMappings(modes, editor)
+    // Trailing whitespace is trimmed from the argument, unless it's separated with a bar.
+    // If there are no spaces (ignoring trailing spaces), then it's a single argument and should be treated as a prefix.
+    // Empty string is an empty prefix that matches everything.
+    if (argument.isBlank() || !argument.trim().contains(' ')) {
+      val prefix = injector.parser.parseKeys(argument.trim())
+      return injector.keyGroup.showKeyMappings(modes, prefix, editor)
+    }
 
     val arguments = try {
       parseCommandArguments(argument) ?: return false
-    } catch (ignored: IllegalArgumentException) {
+    } catch (_: IllegalArgumentException) {
       return false
     }
 
@@ -68,22 +89,34 @@ public data class MapCommand(val ranges: Ranges, val argument: String, val cmd: 
     if (arguments.specialArguments.contains(EXPR)) {
       injector.statisticsService.setIfMapExprUsed(true)
       injector.keyGroup
-        .putKeyMapping(modes, arguments.fromKeys, mappingOwner, arguments.toExpr, arguments.secondArgument, commandInfo.isRecursive)
+        .putKeyMapping(
+          modes,
+          arguments.fromKeys,
+          mappingOwner,
+          arguments.toExpr,
+          arguments.secondArgument,
+          commandInfo.isRecursive
+        )
     } else {
-      val actionId = extractActionId(arguments.secondArgument)
-      if (actionId != null) {
-        // workaround for https://youtrack.jetbrains.com/issue/VIM-2607/Action-BackForward-no-longer-work-the-same
-        val newMapping = "<Action>($actionId)"
-        val toKeys = injector.parser.parseKeys(newMapping)
-        injector.keyGroup.putKeyMapping(modes, arguments.fromKeys, mappingOwner, toKeys, true)
-        logger.debug("Replaced ${arguments.secondArgument} with $newMapping")
-      } else {
-        val toKeys = injector.parser.parseKeys(arguments.secondArgument)
-        injector.keyGroup.putKeyMapping(modes, arguments.fromKeys, mappingOwner, toKeys, commandInfo.isRecursive)
-      }
+      val mapping = transformOldActionSyntax(arguments.secondArgument)
+      val toKeys = injector.parser.parseKeys(mapping)
+      val isRecursive = mapping != arguments.secondArgument || commandInfo.isRecursive
+      injector.keyGroup.putKeyMapping(modes, arguments.fromKeys, mappingOwner, toKeys, isRecursive)
     }
 
     return true
+  }
+
+  private fun transformOldActionSyntax(argument: String): String {
+    extractActionId(argument)?.let {
+      // Prefer `<Action>(...)` syntax to `:action ...<CR>` syntax. It's just better.
+      // Workaround for https://youtrack.jetbrains.com/issue/VIM-2607/Action-BackForward-no-longer-work-the-same
+      val newMapping = "<Action>($it)"
+      logger.debug("Replaced $argument with $newMapping")
+      return newMapping
+    }
+
+    return argument
   }
 
   private fun extractActionId(argument: String): String? {
@@ -131,23 +164,26 @@ public data class MapCommand(val ranges: Ranges, val argument: String, val cmd: 
     val secondArgument: String,
   )
 
-  public companion object {
-    private const val CTRL_V = '\u0016'
+  companion object {
     private val COMMAND_INFOS = arrayOf(
-      // TODO: Support smap, map!, lmap
+      // TODO: Support lmap
       CommandInfo("map", "", MappingMode.NVO, true),
+      CommandInfo("map", "", MappingMode.IC, true, bang = true),
       CommandInfo("nm", "ap", MappingMode.N, true),
       CommandInfo("vm", "ap", MappingMode.V, true),
       CommandInfo("xm", "ap", MappingMode.X, true),
+      CommandInfo("smap", "", MappingMode.S, true),
       CommandInfo("om", "ap", MappingMode.O, true),
       CommandInfo("im", "ap", MappingMode.I, true),
       CommandInfo("cm", "ap", MappingMode.C, true),
 
-      // TODO: Support snoremap, noremap!, lnoremap
+      // TODO: Support lnoremap
       CommandInfo("no", "remap", MappingMode.NVO, false),
+      CommandInfo("no", "remap", MappingMode.IC, false, bang = true),
       CommandInfo("nn", "oremap", MappingMode.N, false),
       CommandInfo("vn", "oremap", MappingMode.V, false),
       CommandInfo("xn", "oremap", MappingMode.X, false),
+      CommandInfo("snor", "emap", MappingMode.S, false),
       CommandInfo("ono", "remap", MappingMode.O, false),
       CommandInfo("ino", "remap", MappingMode.I, false),
       CommandInfo("cno", "remap", MappingMode.C, false),
@@ -157,12 +193,12 @@ public data class MapCommand(val ranges: Ranges, val argument: String, val cmd: 
   }
 
   private fun parseCommandArguments(input: String): CommandArguments? {
-    val firstBarSeparatedCommand = getFirstBarSeparatedCommand(input)
-
     val specialArguments = HashSet<SpecialArgument>()
     val toKeysBuilder = StringBuilder()
     var fromKeys: List<KeyStroke>? = null
-    firstBarSeparatedCommand.split(" ").dropLastWhile { it.isEmpty() }.forEach { part ->
+
+    val preprocessedInput = processBars(input)
+    preprocessedInput.split(" ").dropLastWhile { it.isEmpty() }.forEach { part ->
       if (fromKeys != null) {
         toKeysBuilder.append(" ")
         toKeysBuilder.append(part)
@@ -171,12 +207,12 @@ public data class MapCommand(val ranges: Ranges, val argument: String, val cmd: 
         if (specialArgument != null) {
           specialArguments.add(specialArgument)
         } else {
-          fromKeys = injector.parser.parseKeys(part)
+          fromKeys = injector.parser.parseKeys(processBars(part))
         }
       }
     }
-    for (i in firstBarSeparatedCommand.length - 1 downTo 0) {
-      val c = firstBarSeparatedCommand[i]
+    for (i in preprocessedInput.length - 1 downTo 0) {
+      val c = preprocessedInput[i]
       if (c == ' ') {
         toKeysBuilder.append(c)
       } else {
@@ -185,7 +221,8 @@ public data class MapCommand(val ranges: Ranges, val argument: String, val cmd: 
     }
     return fromKeys?.let {
       val toExpr = if (specialArguments.contains(EXPR)) {
-        injector.vimscriptParser.parseExpression(toKeysBuilder.toString().trim()) ?: throw ExException("E15: Invalid expression: ${toKeysBuilder.toString().trim()}")
+        injector.vimscriptParser.parseExpression(toKeysBuilder.toString().trim())
+          ?: throw ExException("E15: Invalid expression: ${toKeysBuilder.toString().trim()}")
       } else {
         SimpleExpression(toKeysBuilder.toString().trimStart())
       }
@@ -193,27 +230,7 @@ public data class MapCommand(val ranges: Ranges, val argument: String, val cmd: 
     }
   }
 
-  private fun getFirstBarSeparatedCommand(input: String): String {
-    val inputBuilder = StringBuilder()
-    var escape = false
-    for (element in input) {
-      if (escape) {
-        escape = false
-        if (element != '|') {
-          inputBuilder.append('\\')
-        }
-        inputBuilder.append(element)
-      } else if (element == '\\' || element == CTRL_V) {
-        escape = true
-      } else if (element == '|') {
-        break
-      } else {
-        inputBuilder.append(element)
-      }
-    }
-    if (input.endsWith("\\")) {
-      inputBuilder.append("\\")
-    }
-    return inputBuilder.toString()
+  private fun processBars(fromString: String): String {
+    return fromString.replace("\\|", "|")
   }
 }

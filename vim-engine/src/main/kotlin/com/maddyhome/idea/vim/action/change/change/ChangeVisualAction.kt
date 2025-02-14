@@ -22,7 +22,7 @@ import com.maddyhome.idea.vim.handler.VisualOperatorActionHandler
  * @author vlan
  */
 @CommandOrMotion(keys = ["c", "s"], modes = [Mode.VISUAL])
-public class ChangeVisualAction : VisualOperatorActionHandler.ForEachCaret() {
+class ChangeVisualAction : VisualOperatorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.CHANGE
 
   override fun executeAction(
@@ -39,7 +39,6 @@ public class ChangeVisualAction : VisualOperatorActionHandler.ForEachCaret() {
       range.toVimTextRange(false),
       range.type,
       context,
-      operatorArguments,
     )
   }
 }

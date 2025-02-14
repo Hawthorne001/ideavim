@@ -18,7 +18,7 @@ import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.VimActionHandler
 
 @CommandOrMotion(keys = ["Y"], modes = [Mode.NORMAL])
-public class YankLineAction : VimActionHandler.SingleExecution() {
+class YankLineAction : VimActionHandler.SingleExecution() {
 
   override val type: Command.Type = Command.Type.COPY
 
@@ -28,6 +28,6 @@ public class YankLineAction : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    return injector.yank.yankLine(editor, cmd.count)
+    return injector.yank.yankLine(editor, context, cmd.count)
   }
 }

@@ -12,8 +12,8 @@ import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import javax.swing.KeyStroke
 
-public object EngineStringHelper {
-  public fun toPrintableCharacters(keys: List<KeyStroke>): String {
+object EngineStringHelper {
+  fun toPrintableCharacters(keys: List<KeyStroke>): String {
     if (keys.isEmpty()) {
       return ""
     }
@@ -34,7 +34,7 @@ public object EngineStringHelper {
    * @return A printable String of the character represented by the KeyStroke
    */
   @JvmStatic
-  public fun toPrintableCharacter(key: KeyStroke): String {
+  fun toPrintableCharacter(key: KeyStroke): String {
     // TODO: Look at 'isprint', 'display' and 'encoding' settings
     var c = key.keyChar
     if (c == KeyEvent.CHAR_UNDEFINED && key.modifiers == 0) {
@@ -42,6 +42,10 @@ public object EngineStringHelper {
     } else if (c == KeyEvent.CHAR_UNDEFINED && key.modifiers and InputEvent.CTRL_DOWN_MASK != 0) {
       c = (key.keyCode - 'A'.code + 1).toChar()
     }
+    return toPrintableCharacter(c)
+  }
+
+  fun toPrintableCharacter(c: Char): String {
     if (c.code <= 31) {
       return "^" + (c.code + 'A'.code - 1).toChar()
     } else if (c.code == 127) {
@@ -56,14 +60,17 @@ public object EngineStringHelper {
 //    } else if (c == 255) {
 //      return "~" + (char)(c - (('A' - 1) * 3));
     } else if (CharacterHelper.isInvisibleControlCharacter(c) || CharacterHelper.isZeroWidthCharacter(c)) {
-      return String.format("<%04x>", c.code)
+      if (c.code > 0xff) {
+        return String.format("<%04x>", c.code)
+      }
+      return String.format("<%02x>", c.code)
     }
     return c.toString()
   }
 }
 
 // https://stackoverflow.com/a/14652763/3124227
-public fun String.removeAsciiColorCodes(): String {
+fun String.removeAsciiColorCodes(): String {
   return this.replace("\u001B\\[[;\\d]*m".toRegex(), "")
 }
 

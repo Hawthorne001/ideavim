@@ -23,7 +23,7 @@ import com.maddyhome.idea.vim.handler.VisualOperatorActionHandler
  * @author vlan
  */
 @CommandOrMotion(keys = ["y"], modes = [Mode.VISUAL])
-public class YankVisualAction : VisualOperatorActionHandler.SingleExecution() {
+class YankVisualAction : VisualOperatorActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.COPY
 
   override fun executeForAllCarets(
@@ -44,6 +44,6 @@ public class YankVisualAction : VisualOperatorActionHandler.SingleExecution() {
     val vimSelection = selections.firstOrNull() ?: return false
     val startsArray = starts.toIntArray()
     val endsArray = ends.toIntArray()
-    return injector.yank.yankRange(editor, TextRange(startsArray, endsArray), vimSelection.type, true)
+    return injector.yank.yankRange(editor, context, TextRange(startsArray, endsArray), vimSelection.type, true)
   }
 }

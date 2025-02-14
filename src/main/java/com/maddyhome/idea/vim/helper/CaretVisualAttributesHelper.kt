@@ -19,6 +19,7 @@ import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.globalOptions
 import com.maddyhome.idea.vim.api.injector
+import com.maddyhome.idea.vim.common.EditorListener
 import com.maddyhome.idea.vim.common.IsReplaceCharListener
 import com.maddyhome.idea.vim.common.ModeChangeListener
 import com.maddyhome.idea.vim.newapi.IjVimEditor
@@ -73,7 +74,7 @@ internal object GuicursorChangeListener : EffectiveOptionValueChangeListener {
 }
 
 private fun Editor.guicursorMode(): GuiCursorMode {
-  return GuiCursorMode.fromMode(vim.mode, vim.vimStateMachine.isReplaceCharacter)
+  return GuiCursorMode.fromMode(vim.mode, injector.vimState.isReplaceCharacter)
 }
 
 /**
@@ -86,6 +87,7 @@ private fun isBlockCursorOverride() = EditorSettingsExternalizable.getInstance()
 
 private fun Editor.updatePrimaryCaretVisualAttributes() {
   if (VimPlugin.isNotEnabled()) thisLogger().error("The caret attributes should not be updated if the IdeaVim is disabled")
+  if (isIdeaVimDisabledHere) return
   caretModel.primaryCaret.visualAttributes = AttributesCache.getCaretVisualAttributes(this)
 
   // Make sure the caret is visible as soon as it's set. It might be invisible while blinking
@@ -99,6 +101,7 @@ private fun Editor.updatePrimaryCaretVisualAttributes() {
 
 private fun Editor.updateSecondaryCaretsVisualAttributes() {
   if (VimPlugin.isNotEnabled()) thisLogger().error("The caret attributes should not be updated if the IdeaVim is disabled")
+  if (isIdeaVimDisabledHere) return
   // IntelliJ simulates visual block with multiple carets with selections. Do our best to hide them
   val attributes = if (this.vim.inBlockSelection) HIDDEN else AttributesCache.getCaretVisualAttributes(this)
   this.caretModel.allCarets.forEach {
@@ -108,9 +111,12 @@ private fun Editor.updateSecondaryCaretsVisualAttributes() {
   }
 }
 
-private val HIDDEN = CaretVisualAttributes(null, CaretVisualAttributes.Weight.NORMAL, CaretVisualAttributes.Shape.BAR, 0F)
-private val BLOCK = CaretVisualAttributes(null, CaretVisualAttributes.Weight.NORMAL, CaretVisualAttributes.Shape.BLOCK, 1.0F)
-private val BAR = CaretVisualAttributes(null, CaretVisualAttributes.Weight.NORMAL, CaretVisualAttributes.Shape.BAR, 0.25F)
+private val HIDDEN =
+  CaretVisualAttributes(null, CaretVisualAttributes.Weight.NORMAL, CaretVisualAttributes.Shape.BAR, 0F)
+private val BLOCK =
+  CaretVisualAttributes(null, CaretVisualAttributes.Weight.NORMAL, CaretVisualAttributes.Shape.BLOCK, 1.0F)
+private val BAR =
+  CaretVisualAttributes(null, CaretVisualAttributes.Weight.NORMAL, CaretVisualAttributes.Shape.BAR, 0.25F)
 
 private object AttributesCache {
   private var lastGuicursorValue = ""
@@ -144,7 +150,7 @@ private object AttributesCache {
 @TestOnly
 internal fun getGuiCursorMode(editor: Editor) = editor.guicursorMode()
 
-public class CaretVisualAttributesListener : IsReplaceCharListener, ModeChangeListener {
+class CaretVisualAttributesListener : IsReplaceCharListener, ModeChangeListener, EditorListener {
   override fun isReplaceCharChanged(editor: VimEditor) {
     updateCaretsVisual(editor)
   }
@@ -153,21 +159,19 @@ public class CaretVisualAttributesListener : IsReplaceCharListener, ModeChangeLi
     updateCaretsVisual(editor)
   }
 
-  private fun updateCaretsVisual(editor: VimEditor) {
-    if (injector.globalOptions().ideaglobalmode) {
-      updateAllEditorsCaretsVisual()
-    } else {
-      val ijEditor = (editor as IjVimEditor).editor
-      ijEditor.updateCaretsVisualAttributes()
-      ijEditor.updateCaretsVisualPosition()
-    }
+  override fun focusGained(editor: VimEditor) {
+    updateCaretsVisual(editor)
   }
 
-  public fun updateAllEditorsCaretsVisual() {
+  private fun updateCaretsVisual(editor: VimEditor) {
+    val ijEditor = (editor as IjVimEditor).editor
+    ijEditor.updateCaretsVisualAttributes()
+    ijEditor.updateCaretsVisualPosition()
+  }
+
+  fun updateAllEditorsCaretsVisual() {
     injector.editorGroup.getEditors().forEach { editor ->
-      val ijEditor = (editor as IjVimEditor).editor
-      ijEditor.updateCaretsVisualAttributes()
-      ijEditor.updateCaretsVisualPosition()
+      updateCaretsVisual(editor)
     }
   }
 }

@@ -13,17 +13,24 @@ import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 
 /**
  * see "h :split" / "h :vsplit"
  */
 @ExCommand(command = "sp[lit],vs[plit]")
-public data class SplitCommand(val ranges: Ranges, val argument: String, val splitType: SplitType) : Command.SingleExecution(ranges, argument) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
+data class SplitCommand(val range: Range, val argument: String, val splitType: SplitType) :
+  Command.SingleExecution(range, CommandModifier.NONE, argument) {
 
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
+
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     if (splitType == SplitType.VERTICAL) {
       injector.window.splitWindowVertical(context, argument)
     } else {
@@ -34,7 +41,7 @@ public data class SplitCommand(val ranges: Ranges, val argument: String, val spl
   }
 }
 
-public enum class SplitType {
+enum class SplitType {
   VERTICAL,
   HORIZONTAL,
 }

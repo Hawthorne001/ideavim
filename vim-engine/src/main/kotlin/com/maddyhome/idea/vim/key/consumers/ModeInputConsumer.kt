@@ -12,12 +12,13 @@ import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.KeyProcessResult
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
+import com.maddyhome.idea.vim.diagnostic.trace
 import com.maddyhome.idea.vim.diagnostic.vimLogger
 import com.maddyhome.idea.vim.key.KeyConsumer
 import com.maddyhome.idea.vim.state.mode.Mode
 import javax.swing.KeyStroke
 
-public class ModeInputConsumer: KeyConsumer {
+class ModeInputConsumer : KeyConsumer {
   private companion object {
     private val logger = vimLogger<ModeInputConsumer>()
   }
@@ -28,27 +29,37 @@ public class ModeInputConsumer: KeyConsumer {
     allowKeyMappings: Boolean,
     mappingCompleted: Boolean,
     keyProcessResultBuilder: KeyProcessResult.KeyProcessResultBuilder,
-    shouldRecord: KeyHandler.MutableBoolean,
   ): Boolean {
+    logger.trace { "Entered ModeInputConsumer" }
     val isProcessed = when (editor.mode) {
       Mode.INSERT, Mode.REPLACE -> {
         logger.trace("Process insert or replace")
         val keyProcessed = injector.changeGroup.processKey(editor, key, keyProcessResultBuilder)
-        shouldRecord.value = keyProcessed && shouldRecord.value
         keyProcessed
       }
+
       is Mode.SELECT -> {
         logger.trace("Process select")
         val keyProcessed = injector.changeGroup.processKeyInSelectMode(editor, key, keyProcessResultBuilder)
-        shouldRecord.value = keyProcessed && shouldRecord.value
         keyProcessed
       }
+
       is Mode.CMD_LINE -> {
-        logger.trace("Process cmd line")
-        val keyProcessed = injector.processGroup.processExKey(editor, key, keyProcessResultBuilder)
-        shouldRecord.value = keyProcessed && shouldRecord.value
-        keyProcessed
+        val commandLine = injector.commandLine.getActiveCommandLine()
+        if (commandLine != null) {
+          keyProcessResultBuilder.addExecutionStep { _, _, _ ->
+            commandLine.focus()
+            commandLine.handleKey(key)
+          }
+        } else {
+          keyProcessResultBuilder.addExecutionStep { _, lambdaEditor, _ ->
+            lambdaEditor.mode = Mode.NORMAL()
+            KeyHandler.getInstance().reset(lambdaEditor)
+          }
+        }
+        true
       }
+
       else -> {
         false
       }

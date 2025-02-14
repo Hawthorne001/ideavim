@@ -15,7 +15,6 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.newapi.globalIjOptions
 import com.maddyhome.idea.vim.newapi.vim
 import com.maddyhome.idea.vim.state.mode.Mode
-import com.maddyhome.idea.vim.state.mode.mode
 import org.junit.jupiter.params.provider.Arguments
 import kotlin.test.fail
 
@@ -84,7 +83,10 @@ fun assertDoesntChange(timeInMillis: Int = 1000, condition: () -> Boolean) {
   }
 }
 
-internal fun <T, S, V> Collection<T>.cartesianProduct(other: Iterable<S>, transformer: (first: T, second: S) -> V): List<V> {
+internal fun <T, S, V> Collection<T>.cartesianProduct(
+  other: Iterable<S>,
+  transformer: (first: T, second: S) -> V,
+): List<V> {
   return this.flatMap { first -> other.map { second -> transformer.invoke(first, second) } }
 }
 
@@ -111,4 +113,15 @@ fun waitAndAssertMode(
 ) {
   val timeout = timeInMillis ?: (injector.globalIjOptions().visualdelay + 1000)
   waitAndAssert(timeout) { fixture.editor.vim.mode == mode }
+}
+
+internal fun waitUntil(timeout: Int = 10_000, condition: () -> Boolean): Boolean {
+  val timeEnd = System.currentTimeMillis() + timeout
+  while (System.currentTimeMillis() < timeEnd) {
+    if (condition()) {
+      return true // Condition met within the time limit
+    }
+    Thread.sleep(100) // Pause briefly to prevent tight loop
+  }
+  return false // Timed out
 }

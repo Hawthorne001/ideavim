@@ -15,14 +15,15 @@ import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.ex.ExException
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 
 /**
  * @author smartbomb
  */
 @ExCommand(command = "action")
-public data class ActionCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges) {
+data class ActionCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier) {
 
   override val argFlags: CommandHandlerFlags = flags(
     RangeFlag.RANGE_OPTIONAL,
@@ -31,9 +32,18 @@ public data class ActionCommand(val ranges: Ranges, val argument: String) : Comm
     Flag.SAVE_VISUAL,
   )
 
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     val actionName = argument.trim()
-    val action = injector.actionExecutor.getAction(actionName) ?: throw ExException(injector.messages.message("action.not.found.0", actionName))
+    val action = injector.actionExecutor.getAction(actionName) ?: throw ExException(
+      injector.messages.message(
+        "action.not.found.0",
+        actionName
+      )
+    )
     if (injector.application.isUnitTest()) {
       executeAction(editor, action, context)
     } else {

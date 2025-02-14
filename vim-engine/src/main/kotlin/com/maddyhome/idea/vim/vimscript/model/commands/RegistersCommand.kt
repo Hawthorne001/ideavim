@@ -13,20 +13,27 @@ import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.state.mode.SelectionType
-import com.maddyhome.idea.vim.ex.ranges.Ranges
-import com.maddyhome.idea.vim.helper.EngineStringHelper
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 
 /**
  * see "h :registers" / "h :display"
  */
 @ExCommand(command = "dis[play],reg[isters]")
-public data class RegistersCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges, argument) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+data class RegistersCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier, argument) {
+
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
+
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     val registerGroup = injector.registerGroup
-    val regs = registerGroup.getRegisters()
+    val regs = registerGroup.getRegisters(editor, context)
       .filter { argument.isEmpty() || argument.contains(it.name) }
       .joinToString("\n", prefix = "Type Name Content\n") { reg ->
         val type = when (reg.type) {
@@ -34,11 +41,10 @@ public data class RegistersCommand(val ranges: Ranges, val argument: String) : C
           SelectionType.CHARACTER_WISE -> "c"
           SelectionType.BLOCK_WISE -> "b"
         }
-        val text = reg.rawText?.let { injector.parser.parseKeys(it) } ?: reg.keys
-        "  $type  \"${reg.name}   ${EngineStringHelper.toPrintableCharacters(text).take(200)}"
+        "  $type  \"${reg.name}   ${reg.printableString.take(200)}"
       }
 
-    injector.exOutputPanel.getPanel(editor).output(regs)
+    injector.outputPanel.output(editor, context, regs)
 
     return ExecutionResult.Success
   }

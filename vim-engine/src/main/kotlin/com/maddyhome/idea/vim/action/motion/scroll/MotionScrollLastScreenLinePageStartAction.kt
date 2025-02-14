@@ -23,7 +23,7 @@ import com.maddyhome.idea.vim.helper.enumSetOf
 import java.util.*
 
 @CommandOrMotion(keys = ["z^"], modes = [Mode.NORMAL, Mode.VISUAL, Mode.OP_PENDING])
-public class MotionScrollLastScreenLinePageStartAction : VimActionHandler.SingleExecution() {
+class MotionScrollLastScreenLinePageStartAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_IGNORE_SCROLL_JUMP)
@@ -39,7 +39,8 @@ public class MotionScrollLastScreenLinePageStartAction : VimActionHandler.Single
     // Without [count]: Redraw with the line just above the window at the bottom of the window. Put the cursor in that
     // line, at the first non-blank in the line.
     if (cmd.rawCount == 0) {
-      val prevVisualLine = editor.normalizeVisualLine(injector.engineEditorHelper.getVisualLineAtTopOfScreen(editor) - 1)
+      val prevVisualLine =
+        editor.normalizeVisualLine(injector.engineEditorHelper.getVisualLineAtTopOfScreen(editor) - 1)
       val bufferLine = editor.visualLineToBufferLine(prevVisualLine)
       return scroll.scrollCurrentLineToDisplayBottom(editor, bufferLine + 1, true)
     }

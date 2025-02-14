@@ -8,11 +8,15 @@
 
 package com.maddyhome.idea.vim.key
 
+import com.maddyhome.idea.vim.api.VimKeyGroup
+import com.maddyhome.idea.vim.api.injector
 import javax.swing.KeyStroke
 
 /**
  * COMPATIBILITY-LAYER: Moved from common package to this one
  * Please see: https://jb.gg/zo8n0r
+ *
+ * Used by idea-which-key (latest is currently 0.10.3)
  */
 
 /**
@@ -38,14 +42,29 @@ import javax.swing.KeyStroke
  * If the command is complete, it's represented as a [CommandNode]. If this character is a part of command
  *   and the user should complete the sequence, it's [CommandPartNode]
  */
-@Suppress("GrazieInspection")
-public interface Node<T>
+@Deprecated("Use KeyStrokeTrie and VimKeyGroup.getBuiltinCommandsTrie instead")
+interface Node<T>
 
 /** Represents a complete command */
-public data class CommandNode<T>(public val actionHolder: T) : Node<T>
+@Suppress("DEPRECATION")
+@Deprecated("Use KeyStrokeTrie and VimKeyGroup.getBuiltinCommandsTrie instead")
+data class CommandNode<T>(val actionHolder: T) : Node<T> {
+  override fun toString(): String {
+    return "COMMAND NODE (${actionHolder.toString()})"
+  }
+}
 
-/** Represents a part of the command */
-public open class CommandPartNode<T> : Node<T>, HashMap<KeyStroke, Node<T>>() {
+/**
+ * Represents a part of the command
+ *
+ * Vim-which-key uses this to get a map of all builtin Vim actions. Sadly, there is on Vim equivalent, so we can't
+ * provide a Vim script function as an API. After retrieving with [VimKeyGroup.getKeyRoot], the node is iterated
+ */
+@Suppress("DEPRECATION")
+@Deprecated("Use KeyStrokeTrie and VimKeyGroup.getBuiltinCommandsTrie instead")
+open class CommandPartNode<T> internal constructor(private val trieNode: KeyStrokeTrie.TrieNode<T>) : Node<T>,
+  AbstractMap<KeyStroke, Node<T>>() {
+
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
     if (javaClass != other?.javaClass) return false
@@ -53,31 +72,30 @@ public open class CommandPartNode<T> : Node<T>, HashMap<KeyStroke, Node<T>>() {
     return true
   }
 
-  override fun hashCode(): Int {
-    return super.hashCode()
+  override fun hashCode() = super.hashCode()
+
+  override fun toString(): String {
+    return """
+      COMMAND PART NODE(
+      ${entries.joinToString(separator = "\n") { "    " + injector.parser.toKeyNotation(it.key) + " - " + it.value }}
+      )
+      """.trimIndent()
   }
-}
 
-/** Represents a root node for the mode */
-public class RootNode<T> : CommandPartNode<T>()
-
-public fun <T> Node<T>.addLeafs(keyStrokes: List<KeyStroke>, actionHolder: T) {
-  var node: Node<T> = this
-  val len = keyStrokes.size
-  // Add a child for each keystroke in the shortcut for this action
-  for (i in 0 until len) {
-    if (node !is CommandPartNode<*>) {
-      error("Error in tree constructing")
+  override val entries: Set<Map.Entry<KeyStroke, Node<T>>>
+    get() {
+      return buildMap {
+        trieNode.visit { key, value ->
+          val node: Node<T> = if (value.data == null) {
+            CommandPartNode<T>(value)
+          } else {
+            CommandNode(value.data!!)
+          }
+          put(key, node)
+        }
+      }.entries
     }
-    node = addNode(node as CommandPartNode<T>, actionHolder, keyStrokes[i], i == len - 1)
-  }
 }
 
-private fun <T> addNode(base: CommandPartNode<T>, actionHolder: T, key: KeyStroke, isLastInSequence: Boolean): Node<T> {
-  val existing = base[key]
-  if (existing != null) return existing
-
-  val newNode: Node<T> = if (isLastInSequence) CommandNode(actionHolder) else CommandPartNode()
-  base[key] = newNode
-  return newNode
-}
+@Suppress("DEPRECATION")
+internal class RootNode<T>(trieNode: KeyStrokeTrie<T>) : CommandPartNode<T>(trieNode.getTrieNode(emptyList())!!)

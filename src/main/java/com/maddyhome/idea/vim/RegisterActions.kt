@@ -14,36 +14,36 @@ import com.maddyhome.idea.vim.key.MappingOwner
 import java.awt.event.KeyEvent
 import javax.swing.KeyStroke
 
-public object RegisterActions {
+object RegisterActions {
   /**
    * Register all the key/action mappings for the plugin.
    */
   @JvmStatic
-  public fun registerActions() {
+  fun registerActions() {
     registerVimCommandActions()
     registerShortcutsWithoutActions()
   }
 
-  public fun findAction(id: String): EditorActionHandlerBase? {
-    val commandBean = EngineCommandProvider.getCommands().firstOrNull { it.actionId == id }
-      ?: IntellijCommandProvider.getCommands().firstOrNull { it.actionId == id } ?: return null
+  fun findAction(id: String): EditorActionHandlerBase? {
+    val commandBean = IntellijCommandProvider.getCommands().firstOrNull { it.actionId == id }
+      ?: EngineCommandProvider.getCommands().firstOrNull { it.actionId == id } ?: return null
     return commandBean.instance
   }
 
-  public fun findActionOrDie(id: String): EditorActionHandlerBase {
+  fun findActionOrDie(id: String): EditorActionHandlerBase {
     return findAction(id) ?: throw RuntimeException("Action $id is not registered")
   }
 
   @JvmStatic
-  public fun unregisterActions() {
+  fun unregisterActions() {
     val keyGroup = VimPlugin.getKeyIfCreated()
     keyGroup?.unregisterCommandActions()
   }
 
   private fun registerVimCommandActions() {
     val parser = VimPlugin.getKey()
-    EngineCommandProvider.getCommands().forEach { parser.registerCommandAction(it) }
     IntellijCommandProvider.getCommands().forEach { parser.registerCommandAction(it) }
+    EngineCommandProvider.getCommands().forEach { parser.registerCommandAction(it) }
   }
 
   private fun registerShortcutsWithoutActions() {

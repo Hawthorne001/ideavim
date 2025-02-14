@@ -34,7 +34,7 @@ class UnMapCommandTest : VimTestCase() {
   fun testMapKtoJ() {
     putMapping(MappingMode.N, "k", "j", false)
 
-    typeText(commandToKeys("unmap k"))
+    enterCommand("unmap k")
 
     assertNoMapping("k")
   }
@@ -43,7 +43,7 @@ class UnMapCommandTest : VimTestCase() {
   fun `test mappings in insert mode`() {
     putMapping(MappingMode.I, "jk", "<Esc>", false)
 
-    typeText(commandToKeys("iunmap jk"))
+    enterCommand("iunmap jk")
 
     assertNoMapping("jk")
   }
@@ -52,18 +52,67 @@ class UnMapCommandTest : VimTestCase() {
   fun `test removing only part of keys`() {
     putMapping(MappingMode.I, "jk", "<Esc>", false)
 
-    typeText(commandToKeys("unmap j"))
+    enterCommand("iunmap j")
 
     assertNoMapping("j")
     assertMappingExists("jk", "<Esc>", MappingMode.I)
   }
 
   @Test
+  fun `test removing mapping that is also a prefix`() {
+    putMapping(MappingMode.I, "jk", "<Esc>", false)
+    putMapping(MappingMode.I, "jkl", "<Esc>", false)
+
+    enterCommand("iunmap jk")
+
+    assertNoMapping("jk")
+    assertMappingExists("jkl", "<Esc>", MappingMode.I)
+  }
+
+  @Test
   fun `test removing keys from a different mode`() {
     putMapping(MappingMode.I, "jk", "<Esc>", false)
 
-    typeText(commandToKeys("unmap jk"))
+    enterCommand("unmap jk")
 
     assertMappingExists("jk", "<Esc>", MappingMode.I)
+  }
+
+  @Test
+  fun `test removing IC mapping`() {
+    putMapping(MappingMode.IC, "foo", "bar", false)
+    putMapping(MappingMode.IC, "quux", "baz", false)
+    putMapping(MappingMode.N, "foo", "bar", false)
+
+    // We've just mapped "foo" to "bar" in Command-line mode. We can't type it directly!
+    // And enterCommand doesn't parse special keys!
+    typeText(":unmap! fox<BS>o<CR>")
+
+    assertNoMapping("foo", MappingMode.IC)
+    assertMappingExists("quux", "baz", MappingMode.IC)
+    assertMappingExists("foo", "bar", MappingMode.N)
+  }
+
+  @Test
+  fun `test removing IC mapping with abbreviated command`() {
+    putMapping(MappingMode.IC, "foo", "bar", false)
+    putMapping(MappingMode.IC, "quux", "baz", false)
+    putMapping(MappingMode.N, "foo", "bar", false)
+
+    // We've just mapped "foo" to "bar" in Command-line mode. We can't type it directly!
+    // And enterCommand doesn't parse special keys!
+    typeText(":unmap! fox<BS>o<CR>")
+
+    assertNoMapping("foo", MappingMode.IC)
+    assertMappingExists("quux", "baz", MappingMode.IC)
+    assertMappingExists("foo", "bar", MappingMode.N)
+  }
+
+  @Test
+  fun `test error using bang with unmap commands`() {
+    enterCommand("vunmap! foo")
+
+    assertPluginError(true)
+    assertPluginErrorMessageContains("E477: No ! allowed")
   }
 }

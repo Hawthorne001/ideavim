@@ -8,6 +8,9 @@
 
 package com.maddyhome.idea.vim.options
 
+import com.maddyhome.idea.vim.options.OptionDeclaredScope.LOCAL_TO_WINDOW
+
+
 /**
  * Represents the declared scope for an option, e.g. global, global-local or local to window or buffer.
  *
@@ -35,7 +38,7 @@ package com.maddyhome.idea.vim.options
  * options from. Also, Vim always has an opening window, such as `:e {file}` from the ex command line. This isn't true
  * for an IDE, which might open a window or buffer from a Project view, a search palette, ctrl+click on an element, etc.
  */
-public enum class OptionDeclaredScope {
+enum class OptionDeclaredScope {
   /**
    * Option is global and applies to all buffers and windows
    *
@@ -125,5 +128,8 @@ public enum class OptionDeclaredScope {
    *
    * See `:help global-local`
    */
-  GLOBAL_OR_LOCAL_TO_WINDOW
+  GLOBAL_OR_LOCAL_TO_WINDOW;
+
+  fun isGlobalLocal(): Boolean =
+    this == GLOBAL_OR_LOCAL_TO_BUFFER || this == GLOBAL_OR_LOCAL_TO_WINDOW
 }

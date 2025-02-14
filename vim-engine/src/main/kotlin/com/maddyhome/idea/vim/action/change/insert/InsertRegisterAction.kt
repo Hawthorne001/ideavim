@@ -15,16 +15,16 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.Argument
 import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.ex.ExException
 import com.maddyhome.idea.vim.handler.VimActionHandler
 import com.maddyhome.idea.vim.helper.RWLockLabel
 import com.maddyhome.idea.vim.put.PutData
 import com.maddyhome.idea.vim.register.Register
+import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.vimscript.model.Script
 
 @CommandOrMotion(keys = ["<C-R>"], modes = [Mode.INSERT])
-public class InsertRegisterAction : VimActionHandler.SingleExecution() {
+class InsertRegisterAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_SELF_SYNCHRONIZED
 
   override val argumentType: Argument.Type = Argument.Type.CHARACTER
@@ -35,22 +35,18 @@ public class InsertRegisterAction : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    val argument = cmd.argument
-
-    if (argument?.character == '=') {
-      injector.application.invokeLater {
+    val argument = cmd.argument as? Argument.Character ?: return false
+    if (argument.character == '=') {
+      injector.commandLine.readInputAndProcess(editor, context, "=", finishOn = null) { input ->
         try {
-          val expression = readExpression(editor)
-          if (expression != null) {
-            if (expression.isNotEmpty()) {
-              val expressionValue =
-                injector.vimscriptParser.parseExpression(expression)?.evaluate(editor, context, Script(listOf()))
-                  ?: throw ExException("E15: Invalid expression: $expression")
-              val textToStore = expressionValue.toInsertableString()
-              injector.registerGroup.storeTextSpecial('=', textToStore)
-            }
-            insertRegister(editor, context, argument.character, operatorArguments)
+          if (input.isNotEmpty()) {
+            val expression =
+              injector.vimscriptParser.parseExpression(input)?.evaluate(editor, context, Script(listOf()))
+                ?: throw ExException("E15: Invalid expression: $input")
+            val textToStore = expression.toInsertableString()
+            injector.registerGroup.storeTextSpecial('=', textToStore)
           }
+          insertRegister(editor, context, '=')
         } catch (e: ExException) {
           injector.messages.indicateError()
           injector.messages.showStatusBarMessage(editor, e.message)
@@ -58,12 +54,8 @@ public class InsertRegisterAction : VimActionHandler.SingleExecution() {
       }
       return true
     } else {
-      return argument != null && insertRegister(editor, context, argument.character, operatorArguments)
+      return insertRegister(editor, context, argument.character)
     }
-  }
-
-  private fun readExpression(editor: VimEditor): String? {
-    return injector.commandLineHelper.inputString(editor, "=", null)
   }
 }
 
@@ -76,18 +68,17 @@ public class InsertRegisterAction : VimActionHandler.SingleExecution() {
  * @return true if able to insert the register contents, false if not
  */
 @RWLockLabel.SelfSynchronized
-private fun insertRegister(
-  editor: VimEditor,
-  context: ExecutionContext,
-  key: Char,
-  operatorArguments: OperatorArguments,
-): Boolean {
-  val register: Register? = injector.registerGroup.getRegister(key)
+private fun insertRegister(editor: VimEditor, context: ExecutionContext, key: Char): Boolean {
+  val register: Register? = injector.registerGroup.getRegister(editor, context, key)
   if (register != null) {
-    val text = register.rawText ?: injector.parser.toPrintableString(register.keys)
-    val textData = PutData.TextData(text, SelectionType.CHARACTER_WISE, emptyList(), register.name)
-    val putData = PutData(textData, null, 1, insertTextBeforeCaret = true, rawIndent = true, caretAfterInsertedText = true)
-    injector.put.putText(editor, context, putData, operatorArguments = operatorArguments)
+    val textData = PutData.TextData(
+      register.name,
+      injector.clipboardManager.dumbCopiedText(register.text),
+      SelectionType.CHARACTER_WISE
+    )
+    val putData =
+      PutData(textData, null, 1, insertTextBeforeCaret = true, rawIndent = true, caretAfterInsertedText = true)
+    injector.put.putText(editor, context, putData)
     return true
   }
   return false

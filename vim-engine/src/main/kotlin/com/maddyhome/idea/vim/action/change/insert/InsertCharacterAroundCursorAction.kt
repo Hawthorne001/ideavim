@@ -24,7 +24,7 @@ import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.ChangeEditorActionHandler
 
 @CommandOrMotion(keys = ["<C-Y>"], modes = [Mode.INSERT])
-public class InsertCharacterAboveCursorAction : ChangeEditorActionHandler.ForEachCaret() {
+class InsertCharacterAboveCursorAction : ChangeEditorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.INSERT
 
   override fun execute(
@@ -43,7 +43,7 @@ public class InsertCharacterAboveCursorAction : ChangeEditorActionHandler.ForEac
 }
 
 @CommandOrMotion(keys = ["<C-E>"], modes = [Mode.INSERT])
-public class InsertCharacterBelowCursorAction : ChangeEditorActionHandler.ForEachCaret() {
+class InsertCharacterBelowCursorAction : ChangeEditorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.INSERT
 
   override fun execute(
@@ -79,7 +79,7 @@ private fun insertCharacterAroundCursor(editor: VimEditor, caret: VimCaret, dir:
     val charsSequence = editor.text()
     if (offset < charsSequence.length) {
       val ch = charsSequence[offset]
-      (editor as MutableVimEditor).insertText(caret.offset, ch.toString())
+      (editor as MutableVimEditor).insertText(caret, caret.offset, ch.toString())
       caret.moveToMotion(injector.motion.getHorizontalMotion(editor, caret, 1, true))
       res = true
     }

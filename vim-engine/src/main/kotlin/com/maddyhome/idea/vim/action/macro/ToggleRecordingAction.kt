@@ -16,21 +16,26 @@ import com.maddyhome.idea.vim.command.Argument
 import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.VimActionHandler
-import com.maddyhome.idea.vim.helper.vimStateMachine
 
 @CommandOrMotion(keys = ["q"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class ToggleRecordingAction : VimActionHandler.SingleExecution() {
+class ToggleRecordingAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
-  override val argumentType: Argument.Type = Argument.Type.CHARACTER
+  override val argumentType: Argument.Type?
+    get() = if (!injector.registerGroup.isRecording) Argument.Type.CHARACTER else null
 
-  override fun execute(editor: VimEditor, context: ExecutionContext, cmd: Command, operatorArguments: OperatorArguments): Boolean {
+  override fun execute(
+    editor: VimEditor,
+    context: ExecutionContext,
+    cmd: Command,
+    operatorArguments: OperatorArguments,
+  ): Boolean {
     return if (!injector.registerGroup.isRecording) {
-      val argument = cmd.argument ?: return false
+      val argument = cmd.argument as? Argument.Character ?: return false
       val reg = argument.character
       injector.registerGroup.startRecording(reg)
     } else {
-      injector.registerGroup.finishRecording()
+      injector.registerGroup.finishRecording(editor, context)
       true
     }
   }

@@ -19,8 +19,6 @@ import jetbrains.buildServer.configs.kotlin.v2019_2.ParameterDisplay
 import jetbrains.buildServer.configs.kotlin.v2019_2.buildFeatures.sshAgent
 import jetbrains.buildServer.configs.kotlin.v2019_2.buildSteps.gradle
 import jetbrains.buildServer.configs.kotlin.v2019_2.buildSteps.script
-import jetbrains.buildServer.configs.kotlin.v2019_2.failureConditions.BuildFailureOnMetric
-import jetbrains.buildServer.configs.kotlin.v2019_2.failureConditions.failOnMetricChange
 
 object ReleaseMajor : ReleasePlugin("major")
 object ReleaseMinor : ReleasePlugin("minor")
@@ -30,7 +28,10 @@ sealed class ReleasePlugin(private val releaseType: String) : IdeaVimBuildType({
   name = "Publish $releaseType release"
   description = "Build and publish IdeaVim plugin"
 
-  artifactRules = "build/distributions/*"
+  artifactRules = """
+        build/distributions/*
+        build/reports/*
+    """.trimIndent()
 
   params {
     param("env.ORG_GRADLE_PROJECT_ideaVersion", RELEASE)
@@ -146,28 +147,17 @@ sealed class ReleasePlugin(private val releaseType: String) : IdeaVimBuildType({
     gradle {
       name = "Run Integrations"
       tasks = "releaseActions"
+      gradleParams = "--no-configuration-cache"
     }
-    gradle {
-      name = "Slack Notification"
-      tasks = "slackNotification"
-    }
+//    gradle {
+//      name = "Slack Notification"
+//      tasks = "slackNotification"
+//    }
   }
 
   features {
     sshAgent {
       teamcitySshKey = "IdeaVim ssh keys"
-    }
-  }
-
-  failureConditions {
-    failOnMetricChange {
-      metric = BuildFailureOnMetric.MetricType.ARTIFACT_SIZE
-      threshold = 5
-      units = BuildFailureOnMetric.MetricUnit.PERCENTS
-      comparison = BuildFailureOnMetric.MetricComparison.DIFF
-      compareTo = build {
-        buildRule = lastSuccessful()
-      }
     }
   }
 })

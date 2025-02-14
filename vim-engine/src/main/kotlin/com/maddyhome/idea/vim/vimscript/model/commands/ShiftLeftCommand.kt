@@ -15,15 +15,19 @@ import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.common.TextRange
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
+import com.maddyhome.idea.vim.ex.ranges.toTextRange
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 
 /**
  * see "h :<"
  */
 @ExCommand("<")
-public data class ShiftLeftCommand(val ranges: Ranges, val argument: String, val length: Int) : Command.ForEachCaret(ranges, argument) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.WRITABLE)
+data class ShiftLeftCommand(val range: Range, val argument: String, val length: Int) :
+  Command.ForEachCaret(range, CommandModifier.NONE, argument) {
+
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.WRITABLE)
 
   override fun processCommand(
     editor: VimEditor,
@@ -31,17 +35,23 @@ public data class ShiftLeftCommand(val ranges: Ranges, val argument: String, val
     context: ExecutionContext,
     operatorArguments: OperatorArguments,
   ): ExecutionResult {
-    val range = getTextRange(editor, caret, true)
-    val endOffsets = range.endOffsets.map { it - 1 }.toIntArray()
+    val lineRange = getLineRangeWithCount(editor, caret)
+    val textRange = lineRange.toTextRange(editor)
+    val endOffsets = textRange.endOffsets.map { it - 1 }.toIntArray()
     injector.changeGroup.indentRange(
       editor,
       caret,
       context,
-      TextRange(range.startOffsets, endOffsets),
+      TextRange(textRange.startOffsets, endOffsets),
       length,
       -1,
       operatorArguments,
     )
+    // Indent will move the caret to the start line of the range, either maintaining the column or moving to the first
+    // non-whitespace character, depending on the 'startofline' option. This is the behaviour for the `<` operator, but
+    // the `:<` command always places the caret at the first non-whitespace character of the last line in the range.
+    val offset = injector.motion.moveCaretToLineStartSkipLeading(editor, lineRange.endLine)
+    caret.moveToOffset(offset)
     return ExecutionResult.Success
   }
 }

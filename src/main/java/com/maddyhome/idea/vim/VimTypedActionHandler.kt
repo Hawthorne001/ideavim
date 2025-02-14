@@ -32,7 +32,7 @@ import javax.swing.KeyStroke
  * This class is used in Which-Key plugin, so don't make it internal. Generally, we should provide a proper
  *   way to get ideavim keys for this plugin. See VIM-3085
  */
-public class VimTypedActionHandler(origHandler: TypedActionHandler) : TypedActionHandlerEx {
+class VimTypedActionHandler(origHandler: TypedActionHandler) : TypedActionHandlerEx {
   private val handler = KeyHandler.getInstance()
   private val traceTime = injector.globalOptions().ideatracetime
 
@@ -44,7 +44,12 @@ public class VimTypedActionHandler(origHandler: TypedActionHandler) : TypedActio
     LOG.trace("Before execute for typed action")
     if (editor.isIdeaVimDisabledHere) {
       LOG.trace("IdeaVim disabled here, finish")
-      (KeyHandlerKeeper.getInstance().originalHandler as? TypedActionHandlerEx)?.beforeExecute(editor, charTyped, context, plan)
+      (KeyHandlerKeeper.getInstance().originalHandler as? TypedActionHandlerEx)?.beforeExecute(
+        editor,
+        charTyped,
+        context,
+        plan
+      )
       return
     }
 
@@ -77,7 +82,7 @@ public class VimTypedActionHandler(origHandler: TypedActionHandler) : TypedActio
       val modifiers = if (charTyped == ' ' && VimKeyListener.isSpaceShift) KeyEvent.SHIFT_DOWN_MASK else 0
       val keyStroke = KeyStroke.getKeyStroke(charTyped, modifiers)
       val startTime = if (traceTime) System.currentTimeMillis() else null
-      handler.handleKey(editor.vim, keyStroke, injector.executionContextManager.onEditor(editor.vim, context.vim), handler.keyHandlerState)
+      handler.handleKey(editor.vim, keyStroke, context.vim, handler.keyHandlerState)
       if (startTime != null) {
         val duration = System.currentTimeMillis() - startTime
         LOG.info("VimTypedAction '$charTyped': $duration ms")

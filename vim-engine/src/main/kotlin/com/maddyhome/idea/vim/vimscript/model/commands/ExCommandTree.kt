@@ -12,23 +12,23 @@ import com.maddyhome.idea.vim.helper.indexOfOrNull
 import com.maddyhome.idea.vim.helper.lastIndexOfOrNull
 
 // TODO do we really need a tree structure here?
-public class ExCommandTree {
+class ExCommandTree {
   private val abbrevToCommand = mutableMapOf<String, String>()
   private val commandToInstance = mutableMapOf<String, LazyExCommandInstance>()
 
-  public fun addCommand(commandsPattern: String, lazyInstance: LazyExCommandInstance) {
+  fun addCommand(commandsPattern: String, lazyInstance: LazyExCommandInstance) {
     val subCommands = parseCommandPattern(commandsPattern)
     for ((requiredPart, optionalPart) in subCommands) {
       val fullCommand = requiredPart + optionalPart
       commandToInstance[fullCommand] = lazyInstance
 
-      for (i in (0 .. optionalPart.length)) {
+      for (i in (0..optionalPart.length)) {
         abbrevToCommand[requiredPart + optionalPart.substring(0, i)] = fullCommand
       }
     }
   }
 
-  public fun getCommand(command: String): LazyExCommandInstance? {
+  fun getCommand(command: String): LazyExCommandInstance? {
     return abbrevToCommand[command]?.let { commandToInstance[it] }
   }
 
@@ -48,7 +48,10 @@ public class ExCommandTree {
         throw RuntimeException("Invalid ex-command pattern $commandsPattern")
       }
       val primaryPart = command.substring(0, leftBraceIndex ?: command.length)
-      val optionalPart = if (leftBraceIndex != null && rightBraceIndex != null) command.substring(leftBraceIndex + 1, rightBraceIndex) else ""
+      val optionalPart = if (leftBraceIndex != null && rightBraceIndex != null) command.substring(
+        leftBraceIndex + 1,
+        rightBraceIndex
+      ) else ""
       result.add(Pair(primaryPart, optionalPart))
     }
     return result

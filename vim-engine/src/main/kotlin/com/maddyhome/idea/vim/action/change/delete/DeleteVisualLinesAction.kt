@@ -18,18 +18,18 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.CommandFlags
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.common.TextRange
 import com.maddyhome.idea.vim.group.visual.VimSelection
 import com.maddyhome.idea.vim.handler.VisualOperatorActionHandler
 import com.maddyhome.idea.vim.helper.enumSetOf
+import com.maddyhome.idea.vim.state.mode.SelectionType
 import java.util.*
 
 /**
  * @author vlan
  */
 @CommandOrMotion(keys = ["X"], modes = [Mode.VISUAL])
-public class DeleteVisualLinesAction : VisualOperatorActionHandler.ForEachCaret() {
+class DeleteVisualLinesAction : VisualOperatorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.DELETE
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_MOT_LINEWISE)
@@ -56,6 +56,6 @@ public class DeleteVisualLinesAction : VisualOperatorActionHandler.ForEachCaret(
         Triple(caret, lineRange, SelectionType.LINE_WISE)
       }
     }
-    return injector.changeGroup.deleteRange(editor, usedCaret, usedRange, usedType, false, operatorArguments)
+    return injector.changeGroup.deleteRange(editor, context, usedCaret, usedRange, usedType, false)
   }
 }

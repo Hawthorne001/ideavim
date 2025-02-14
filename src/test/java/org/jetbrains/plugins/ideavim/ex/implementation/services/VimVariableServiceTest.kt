@@ -15,33 +15,65 @@ class VimVariableServiceTest : VimTestCase() {
   @Test
   fun `test v count variable without count specified`() {
     configureByText("\n")
-    enterCommand("nnoremap <expr> n ':echo ' .. v:count .. \"\\<CR>\"")
+    enterCommand("""nnoremap <expr> n ':echo ' .. v:count .. "\<CR>"""")
     typeText("n")
-    assertExOutput("0\n")
+    assertExOutput("0")
   }
 
   @Test
   fun `test v count variable`() {
     configureByText("\n")
-    enterCommand("nnoremap <expr> n ':' .. \"\\<C-u>\" .. 'echo ' .. v:count .. \"\\<CR>\"")
+    enterCommand("""nnoremap <expr> n ':' .. "\<C-u>" .. 'echo ' .. v:count .. "\<CR>"""")
     typeText("5n")
-    assertExOutput("5\n")
+    assertExOutput("5")
+  }
+
+  @Test
+  fun `test v count variable with additional count during select register`() {
+    configureByText("\n")
+    enterCommand("""nnoremap <expr> n ':' .. "\<C-u>" .. 'echo ' .. v:count .. "\<CR>"""")
+    typeText("2\"a5n")
+    assertExOutput("10")
+  }
+
+  @Test
+  fun `test v count variable with additional pathological count during select register`() {
+    configureByText("\n")
+    enterCommand("""nnoremap <expr> n ':' .. "\<C-u>" .. 'echo ' .. v:count .. "\<CR>"""")
+    typeText("2\"a3\"b4\"c5n")
+    assertExOutput("120")
   }
 
   @Test
   fun `test v count1 variable without count specified`() {
     configureByText("\n")
-    enterCommand("nnoremap <expr> n ':echo ' .. v:count1 .. \"\\<CR>\"")
+    enterCommand("""nnoremap <expr> n ':echo ' .. v:count1 .. "\<CR>"""")
     typeText("n")
-    assertExOutput("1\n")
+    assertExOutput("1")
   }
 
   @Test
   fun `test v count1 variable`() {
     configureByText("\n")
-    enterCommand("nnoremap <expr> n ':' .. \"\\<C-u>\" .. 'echo ' .. v:count1 .. \"\\<CR>\"")
+    enterCommand("""nnoremap <expr> n ':' .. "\<C-u>" .. 'echo ' .. v:count1 .. "\<CR>"""")
     typeText("5n")
-    assertExOutput("5\n")
+    assertExOutput("5")
+  }
+
+  @Test
+  fun `test v count1 variable with additional count during select register`() {
+    configureByText("\n")
+    enterCommand("""nnoremap <expr> n ':' .. "\<C-u>" .. 'echo ' .. v:count1 .. "\<CR>"""")
+    typeText("2\"a5n")
+    assertExOutput("10")
+  }
+
+  @Test
+  fun `test v count1 variable with additional pathological count during select register`() {
+    configureByText("\n")
+    enterCommand("""nnoremap <expr> n ':' .. "\<C-u>" .. 'echo ' .. v:count1 .. "\<CR>"""")
+    typeText("2\"a3\"b4\"c5n")
+    assertExOutput("120")
   }
 
   @Test
@@ -81,4 +113,5 @@ class VimVariableServiceTest : VimTestCase() {
     typeText("n")
     assertState("1\n2\n1\n2\n1\n2\n1\n2\n${c}1\n")
   }
+
 }

@@ -9,58 +9,27 @@ package com.maddyhome.idea.vim.common
 
 import javax.swing.KeyStroke
 
-public class DigraphResult {
-  public val result: Int
-  public val stroke: KeyStroke?
-  private var promptCharacter: Char = 0.toChar()
+sealed class DigraphResult(
+  val stroke: KeyStroke? = null,
+  val promptCharacter: Char = 0.toChar(),
+) {
+  open class Handled(promptCharacter: Char) : DigraphResult(null, promptCharacter)
+  data object HandledDigraph : Handled('?')
+  data object HandledLiteral : Handled('^')
+  class Done(stroke: KeyStroke?) : DigraphResult(stroke)
+  data object Unhandled : DigraphResult()
+  data object Bad : DigraphResult()
 
-  private constructor(result: Int) {
-    this.result = result
-    stroke = null
-  }
-
-  private constructor(result: Int, promptCharacter: Char) {
-    this.result = result
-    this.promptCharacter = promptCharacter
-    stroke = null
-  }
-
-  private constructor(stroke: KeyStroke?) {
-    result = RES_DONE
-    this.stroke = stroke
-  }
-
-  public companion object {
-    public const val RES_HANDLED: Int = 0
-    public const val RES_UNHANDLED: Int = 1
-    public const val RES_DONE: Int = 3
-    public const val RES_BAD: Int = 4
-
-    @JvmField
-    public val HANDLED_DIGRAPH: DigraphResult = DigraphResult(RES_HANDLED, '?')
-
-    @JvmField
-    public val HANDLED_LITERAL: DigraphResult = DigraphResult(RES_HANDLED, '^')
-
-    @JvmField
-    public val UNHANDLED: DigraphResult = DigraphResult(RES_UNHANDLED)
-
-    @JvmField
-    public val BAD: DigraphResult = DigraphResult(RES_BAD)
-
-    @JvmStatic
-    public fun done(stroke: KeyStroke?): DigraphResult {
-      // for some reason vim does not let to insert char 10 as a digraph, it inserts 10 instead
+  companion object {
+    fun done(stroke: KeyStroke?): DigraphResult {
+      // For some reason, vim does not let to insert char 10 as a digraph; it inserts 10 instead
       return if (stroke == null || stroke.keyCode != 10) {
-        DigraphResult(stroke)
+        Done(stroke)
       } else {
-        DigraphResult(KeyStroke.getKeyStroke(0.toChar()))
+        Done(KeyStroke.getKeyStroke(0.toChar()))
       }
     }
 
-    @JvmStatic
-    public fun handled(promptCharacter: Char): DigraphResult {
-      return DigraphResult(RES_HANDLED, promptCharacter)
-    }
+    fun handled(promptCharacter: Char) = Handled(promptCharacter)
   }
 }

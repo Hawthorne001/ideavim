@@ -8,6 +8,7 @@
 
 package com.maddyhome.idea.vim.api
 
-public interface VirtualFile {
-  public val path: String
+interface VirtualFile {
+  val path: String
+  val protocol: String
 }

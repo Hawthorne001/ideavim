@@ -15,15 +15,19 @@ import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.common.TextRange
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
+import com.maddyhome.idea.vim.ex.ranges.toTextRange
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 
 /**
  * see "h :join"
  */
 @ExCommand(command = "j[oin]")
-public data class JoinLinesCommand(val ranges: Ranges, val argument: String) : Command.ForEachCaret(ranges, argument) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.WRITABLE)
+data class JoinLinesCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.ForEachCaret(range, modifier, argument) {
+
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.WRITABLE)
 
   override fun processCommand(
     editor: VimEditor,
@@ -31,25 +35,26 @@ public data class JoinLinesCommand(val ranges: Ranges, val argument: String) : C
     context: ExecutionContext,
     operatorArguments: OperatorArguments,
   ): ExecutionResult {
-    val arg = argument
-    val spaces = arg.isEmpty() || arg[0] != '!'
+    val spaces = modifier != CommandModifier.BANG
 
-    val textRange = getTextRange(editor, caret, true)
+    val lineRange = getLineRangeWithCount(editor, caret)
+    val textRange = lineRange.toTextRange(editor)
 
-    return if (injector.changeGroup.deleteJoinRange(
-        editor,
-        caret,
-        TextRange(
-          textRange.startOffset,
-          textRange.endOffset - 1,
-        ),
-        spaces,
-        operatorArguments,
-      )
-    ) {
-      ExecutionResult.Success
-    } else {
-      ExecutionResult.Error
+    // Join the given range, which might not match the current location of the caret
+    val success = injector.changeGroup.deleteJoinRange(
+      editor,
+      context,
+      caret,
+      TextRange(textRange.startOffset, textRange.endOffset - 1),
+      spaces,
+      operatorArguments
+    )
+    if (success) {
+      // We've joined all the lines. The end line of the range is now the start line
+      val offset = injector.motion.moveCaretToLineStartSkipLeading(editor, lineRange.startLine)
+      caret.moveToOffset(offset)
+      return ExecutionResult.Success
     }
+    return ExecutionResult.Error
   }
 }

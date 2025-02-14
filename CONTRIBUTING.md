@@ -1,21 +1,46 @@
 [![TeamCity Build][teamcity-build-status-svg]][teamcity-build-status]
 
-IdeaVim is an open source project created by 80+ contributors. Would you like to make it even better? That’s wonderful!
+IdeaVim is an open source project created by 130+ contributors. Would you like to make it even better? That’s wonderful!
 
 This page is created to help you start contributing. And who knows, maybe in a few days this project will be brighter than ever!
 
-:warning: The plugin is currently under a huge refactoring aiming to split into vim-engine and IdeaVim in order to
-support the new [Fleet IDE](https://www.jetbrains.com/fleet/). Please see [Fleet refactoring](#Fleet-refactoring).
+# Awards for Quality Contributions
+
+In February 2025, we’re starting a program to award one-year All Products Pack subscriptions to the implementers of quality contributions to the IdeaVim project. The program will continue for all of 2025 and may be prolonged.
+
+Subscriptions can be awarded for merged pull requests that meet the following requirements:
+
+
+- The change should be non-trivial, though there might be exceptions — for example, where a trivial fix requires a complicated investigation.
+- The change should fully implement a feature or fix the root cause of a bug. Workarounds or hacks are not accepted.
+- If applicable, the change should be properly covered with unit tests.
+- The work should be performed by the contributor, though the IdeaVim team is happy to review it and give feedback.
+- The change should fix an issue or implement a feature filed by another user. If you want to file an issue and provide a solution to it, your request for a license should be explicitly discussed with the IdeaVim team in the ticket comments.
+
+
+We'd like to make sure this award program is helpful and fair. Since we just started it and still fine-tuning the details, the final say on giving licenses remains with the IdeaVim team and the requirements might evolve over time.
+
+
+Also, a few notes:
+
+
+- If you have any doubts about whether your change or fix is eligible for the award, get in touch with us in the comments on YouTrack or in any other way.
+- Please mention this program in the pull request text. This is not an absolute requirement, but it will help ensure we know you would like to be considered for an award, but this is not required.
+- During 2025, a single person may only receive a single subscription. Even if you make multiple contributions, you will not be eligible for multiple awards.
+- Any delays caused by the IdeaVim team will not affect eligibility for an award if the other requirements are met.
+- Draft pull requests will not be reviewed unless explicitly requested.
+- Tickets with the [ideavim-bounty](https://youtrack.jetbrains.com/issues?q=tag:%20%7BIdeaVim-bounty%7D) tag are good candidates for this award.
+
 
 ## Before you begin
 
-- The project is written in Kotlin and Java. Choose whichever language you feel more comfortable with,
-or maybe one that you’d like to get to know better (why not start [learning Kotlin](https://kotlinlang.org/docs/tutorials/) right now?).
+- The project is primarily written in Kotlin with a few Java files. When contributing to the project, use Kotlin unless
+you’re working in areas where Java is explicitly used.
 
 - If you come across some IntelliJ Platform code, these links may prove helpful:
 
-    * [IntelliJ architectural overview](https://www.jetbrains.org/intellij/sdk/docs/platform/fundamentals.html)
-    * [IntelliJ plugin development resources](https://www.jetbrains.org/intellij/sdk/docs/welcome.html)
+    * [IntelliJ Platform SDK](https://plugins.jetbrains.com/docs/intellij/welcome.html)
+    * [IntelliJ architectural overview](https://plugins.jetbrains.com/docs/intellij/fundamentals.html)
 
 - Having any difficulties?
 Join the brand new
@@ -62,12 +87,16 @@ for a few days or send it to a friend for testing.
 If you are looking for:
 
 - Vim commands (`w`, `<C-O>`, `p`, etc.):
-    - Any particular command: `package-info.java`.
+    - Any particular command:
+      - [Commands common for Fleet and IdeaVim](vim-engine/src/main/resources/ksp-generated/engine_commands.json)
+      - [IdeaVim only commands](src/main/resources/ksp-generated/intellij_commands.json)
     - How commands are executed in common: `EditorActionHandlerBase`.
     - Key mapping: `KeyHandler.handleKey()`.
 
 - Ex commands (`:set`, `:s`, `:nohlsearch`):
-    - Any particular ex command: package `com.maddyhome.idea.vim.ex.handler`.
+    - Any particular command:
+        - [Commands common for Fleet and IdeaVim](vim-engine/src/main/resources/ksp-generated/engine_ex_commands.json)
+        - [IdeaVim only commands](src/main/resources/ksp-generated/intellij_ex_commands.json)
     - Vim script grammar: `Vimscript.g4`.
     - Vim script parsing: package `com.maddyhome.idea.vim.vimscript.parser`.
     - Vim script executor: `Executor`.
@@ -78,7 +107,7 @@ If you are looking for:
 
 - Common features:
     - State machine. How every particular keystroke is parsed in IdeaVim: `KeyHandler.handleKey()`.
-    - Options (`incsearch`, `iskeyword`, `relativenumber`): `OptionServiceImpl`.
+    - Options (`incsearch`, `iskeyword`, `relativenumber`): `VimOptionGroup`.
     - Plugin startup: `PluginStartup`.
     - Notifications: `NotificationService`.
     - Status bar icon: `StatusBar.kt`.
@@ -106,7 +135,7 @@ Cras id tellus in ex imperdiet egestas.
 carets, dollar motion, etc.
    
 ##### Neovim
-IdeaVim has an experimental integration with neovim in tests. Tests that are performed with `doTest` also executed in
+IdeaVim has an integration with neovim in tests. Tests that are performed with `doTest` also executed in
 neovim instance, and the state of IdeaVim is asserted to be the same as the state of neovim.
 - Only tests that use `doTest` are checked with neovim.
 - Tests with `@VimBehaviorDiffers` or `@TestWithoutNeovim` annotations don't use neovim.
@@ -132,14 +161,15 @@ We also support proper command mappings (functions are mapped to `<Plug>...`), t
 - Magic is supported as well. See `Magic`.
 
 
-## Fleet refactoring
-At the moment, IdeaVim is under an active refactoring aiming to split IdeaVim into two modules: vim-engine and IdeaVim.
+## Fleet
+
+The IdeaVim plugin is divided into two main modules: IdeaVim and vim-engine.
+IdeaVim serves as a plugin for JetBrains IDEs, while vim-engine is an IntelliJ Platform-independent Vim engine.
+This engine is utilized in both the Vim plugin for Fleet and IdeaVim.
 
 If you develop a plugin that depends on IdeaVim: We have an instrument to check that our changes don't affect
-the plugins in the marketplace. Also, we commit to support currently used API at least till the end of 2022.
+the plugins in the marketplace.
 If you still encounter any issues with the newer versions of IdeaVim, please [contact maintainers](https://github.com/JetBrains/ideavim#contact-maintainers).
-We kindly ask you not to use anything from the new API (like `VimEditor`, `injector`) because at the moment we don't
-guarantee the compatibility of this API in the future versions.
 
 
 -----

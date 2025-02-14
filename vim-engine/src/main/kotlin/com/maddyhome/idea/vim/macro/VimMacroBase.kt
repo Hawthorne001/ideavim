@@ -16,9 +16,8 @@ import com.maddyhome.idea.vim.diagnostic.VimLogger
 import com.maddyhome.idea.vim.diagnostic.debug
 import com.maddyhome.idea.vim.diagnostic.trace
 import com.maddyhome.idea.vim.diagnostic.vimLogger
-import javax.swing.KeyStroke
 
-public abstract class VimMacroBase : VimMacro {
+abstract class VimMacroBase : VimMacro {
   override var lastRegister: Char = 0.toChar()
   private var macroDepth = 0
 
@@ -37,19 +36,13 @@ public abstract class VimMacroBase : VimMacro {
    */
   override fun playbackRegister(editor: VimEditor, context: ExecutionContext, reg: Char, count: Int): Boolean {
     logger.debug { "play back register $reg $count times" }
-    val register = injector.registerGroup.getPlaybackRegister(reg) ?: return false
+    val register = injector.registerGroup.getPlaybackRegister(editor, context, reg) ?: return false
     ++macroDepth
     try {
-      val keys: List<KeyStroke> = if (register.rawText == null) {
-        register.keys
-      } else {
-        injector.parser.parseKeys(register.rawText)
-      }
-
       logger.trace {
         "Adding new keys to keyStack as part of playback. State before adding keys: ${KeyHandler.getInstance().keyStack.dump()}"
       }
-      KeyHandler.getInstance().keyStack.addKeys(keys)
+      KeyHandler.getInstance().keyStack.addKeys(register.keys)
       playbackKeys(editor, context, count)
     } finally {
       --macroDepth
@@ -71,7 +64,7 @@ public abstract class VimMacroBase : VimMacro {
     return lastRegister.code != 0 && playbackRegister(editor, context, lastRegister, count)
   }
 
-  public companion object {
-    public val logger: VimLogger = vimLogger<VimMacroBase>()
+  companion object {
+    val logger: VimLogger = vimLogger<VimMacroBase>()
   }
 }

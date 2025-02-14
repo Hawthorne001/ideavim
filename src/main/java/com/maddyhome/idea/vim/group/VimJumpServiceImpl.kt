@@ -25,13 +25,18 @@ import com.maddyhome.idea.vim.mark.Jump
 import com.maddyhome.idea.vim.newapi.IjVimEditor
 import com.maddyhome.idea.vim.newapi.globalIjOptions
 import com.maddyhome.idea.vim.newapi.ij
+import com.maddyhome.idea.vim.newapi.initInjector
 import org.jdom.Element
 
-@State(name = "VimJumpsSettings", storages = [Storage(value = "\$APP_CONFIG$/vim_settings_local.xml", roamingType = RoamingType.DISABLED)])
+@State(
+  name = "VimJumpsSettings",
+  storages = [Storage(value = "\$APP_CONFIG$/vim_settings_local.xml", roamingType = RoamingType.DISABLED)]
+)
 internal class VimJumpServiceImpl : VimJumpServiceBase(), PersistentStateComponent<Element?> {
   companion object {
     private val logger = vimLogger<VimJumpServiceImpl>()
   }
+
   override var lastJumpTimeStamp: Long = 0
 
   override fun includeCurrentCommandAsNavigation(editor: VimEditor) {
@@ -53,6 +58,7 @@ internal class VimJumpServiceImpl : VimJumpServiceBase(), PersistentStateCompone
         jumpElem.setAttribute("line", jump.line.toString())
         jumpElem.setAttribute("column", jump.col.toString())
         jumpElem.setAttribute("filename", StringUtil.notNullize(jump.filepath))
+        jumpElem.setAttribute("protocol", StringUtil.notNullize(jump.protocol))
         projectElement.addContent(jumpElem)
         if (logger.isDebug()) {
           logger.debug("saved jump = $jump")
@@ -64,6 +70,7 @@ internal class VimJumpServiceImpl : VimJumpServiceBase(), PersistentStateCompone
   }
 
   override fun loadState(state: Element) {
+    initInjector()
     val projectElements = state.getChildren("project")
     for (projectElement in projectElements) {
       val jumps = mutableListOf<Jump>()
@@ -73,6 +80,7 @@ internal class VimJumpServiceImpl : VimJumpServiceBase(), PersistentStateCompone
           Integer.parseInt(jumpElement.getAttributeValue("line")),
           Integer.parseInt(jumpElement.getAttributeValue("column")),
           jumpElement.getAttributeValue("filename"),
+          jumpElement.getAttributeValue("protocol", "file"),
         )
         jumps.add(jump)
       }
@@ -87,26 +95,27 @@ internal class VimJumpServiceImpl : VimJumpServiceBase(), PersistentStateCompone
 
 internal class JumpsListener(val project: Project) : RecentPlacesListener {
   override fun recentPlaceAdded(changePlace: PlaceInfo, isChanged: Boolean) {
+    initInjector()
     if (!injector.globalIjOptions().unifyjumps) return
-    
+
     val jumpService = injector.jumpService
     if (!isChanged) {
       if (changePlace.timeStamp < jumpService.lastJumpTimeStamp) return // this listener is notified asynchronously, and
       // we do not want jumps that were processed before
       val jump = buildJump(changePlace) ?: return
-      jumpService.addJump(project.basePath ?: IjVimEditor.DEFAULT_PROJECT_ID, jump, true)
+      jumpService.addJump(injector.file.getProjectId(project), jump, true)
     }
   }
 
   override fun recentPlaceRemoved(changePlace: PlaceInfo, isChanged: Boolean) {
     if (!injector.globalIjOptions().unifyjumps) return
-    
+
     val jumpService = injector.jumpService
     if (!isChanged) {
       if (changePlace.timeStamp < jumpService.lastJumpTimeStamp) return // this listener is notified asynchronously, and
       // we do not want jumps that were processed before
       val jump = buildJump(changePlace) ?: return
-      jumpService.removeJump(project.basePath ?: IjVimEditor.DEFAULT_PROJECT_ID, jump)
+      jumpService.removeJump(injector.file.getProjectId(project), jump)
     }
   }
 
@@ -120,6 +129,6 @@ internal class JumpsListener(val project: Project) : RecentPlacesListener {
 
     val path = place.file.path
 
-    return Jump(line, col, path)
+    return Jump(line, col, path, place.file.fileSystem.protocol)
   }
 }

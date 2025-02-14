@@ -18,13 +18,17 @@ import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.VimActionHandler
 
 @CommandOrMotion(keys = ["m"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class MotionMarkAction : VimActionHandler.SingleExecution() {
+class MotionMarkAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
   override val argumentType: Argument.Type = Argument.Type.CHARACTER
 
-  override fun execute(editor: VimEditor, context: ExecutionContext, cmd: Command, operatorArguments: OperatorArguments): Boolean {
-    val argument = cmd.argument
-    return argument != null && injector.markService.setMark(editor, argument.character)
+  override fun execute(
+    editor: VimEditor,
+    context: ExecutionContext,
+    cmd: Command,
+    operatorArguments: OperatorArguments,
+  ): Boolean {
+    return cmd.argument.let { it is Argument.Character && injector.markService.setMark(editor, it.character) }
   }
 }

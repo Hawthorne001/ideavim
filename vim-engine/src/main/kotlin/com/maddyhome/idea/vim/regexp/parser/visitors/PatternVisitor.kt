@@ -10,6 +10,8 @@ package com.maddyhome.idea.vim.regexp.parser.visitors
 
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.options.helpers.KeywordOptionHelper
+import com.maddyhome.idea.vim.parser.generated.RegexParser
+import com.maddyhome.idea.vim.parser.generated.RegexParserBaseVisitor
 import com.maddyhome.idea.vim.regexp.engine.nfa.NFA
 import com.maddyhome.idea.vim.regexp.engine.nfa.matcher.AfterColumnCursorMatcher
 import com.maddyhome.idea.vim.regexp.engine.nfa.matcher.AfterColumnMatcher
@@ -41,8 +43,6 @@ import com.maddyhome.idea.vim.regexp.engine.nfa.matcher.StartOfFileMatcher
 import com.maddyhome.idea.vim.regexp.engine.nfa.matcher.StartOfLineMatcher
 import com.maddyhome.idea.vim.regexp.engine.nfa.matcher.StartOfWordMatcher
 import com.maddyhome.idea.vim.regexp.engine.nfa.matcher.VisualAreaMatcher
-import com.maddyhome.idea.vim.regexp.parser.generated.RegexParser
-import com.maddyhome.idea.vim.regexp.parser.generated.RegexParserBaseVisitor
 
 /**
  * A tree visitor for converting a parsed Vim pattern into an internal
@@ -89,7 +89,8 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
       subNFA.assert(shouldConsume = false, isPositive = true, isAhead = true)
       nfaStart.concatenate(subNFA)
     }
-    return nfaStart.concatenate(if (ctx.concats.isNotEmpty()) visit(ctx.concats.last()) else NFA.fromSingleState()).concatenate(nfaEnd)
+    return nfaStart.concatenate(if (ctx.concats.isNotEmpty()) visit(ctx.concats.last()) else NFA.fromSingleState())
+      .concatenate(nfaEnd)
   }
 
   override fun visitConcat(ctx: RegexParser.ConcatContext): NFA {
@@ -104,11 +105,16 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
     return when (multi) {
       is Multi.RangeMulti -> buildQuantifiedNFA(ctx.atom(), multi)
       is Multi.AtomicMulti -> return visit(ctx.atom()).assert(shouldConsume = true, isPositive = true, isAhead = true)
-      is Multi.AssertionMulti -> return visit(ctx.atom()).assert(shouldConsume = false, isPositive = multi.isPositive, isAhead = multi.isAhead, limit = multi.limit)
+      is Multi.AssertionMulti -> return visit(ctx.atom()).assert(
+        shouldConsume = false,
+        isPositive = multi.isPositive,
+        isAhead = multi.isAhead,
+        limit = multi.limit
+      )
     }
   }
 
-  private fun buildQuantifiedNFA(atom: RegexParser.AtomContext, range: Multi.RangeMulti) : NFA {
+  private fun buildQuantifiedNFA(atom: RegexParser.AtomContext, range: Multi.RangeMulti): NFA {
     val prefixNFA = NFA.fromSingleState()
     for (i in 0 until range.lowerBoundary.i)
       prefixNFA.concatenate(visit(atom))
@@ -248,20 +254,24 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
   }
 
   override fun visitWhitespace(ctx: RegexParser.WhitespaceContext): NFA {
-    return NFA.fromMatcher(CollectionMatcher(
-      setOf(' ', '\t'),
-      includesEOL = ctx.text.contains('_'),
-      forceNoIgnoreCase = true
-    ))
+    return NFA.fromMatcher(
+      CollectionMatcher(
+        setOf(' ', '\t'),
+        includesEOL = ctx.text.contains('_'),
+        forceNoIgnoreCase = true
+      )
+    )
   }
 
   override fun visitNotWhitespace(ctx: RegexParser.NotWhitespaceContext): NFA {
-    return NFA.fromMatcher(CollectionMatcher(
-      setOf(' ', '\t'),
-      isNegated = true,
-      includesEOL = ctx.text.contains('_'),
-      forceNoIgnoreCase = true
-    ))
+    return NFA.fromMatcher(
+      CollectionMatcher(
+        setOf(' ', '\t'),
+        isNegated = true,
+        includesEOL = ctx.text.contains('_'),
+        forceNoIgnoreCase = true
+      )
+    )
   }
 
   override fun visitDigit(ctx: RegexParser.DigitContext): NFA {
@@ -502,9 +512,13 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
     return visitCollection(ctx.collection_elems, true, ctx.COLLECTION_START().text.contains('_'))
   }
 
-  private fun visitCollection(collectionElements: List<RegexParser.Collection_elemContext>, isNegated: Boolean, includesEOL: Boolean) : NFA {
+  private fun visitCollection(
+    collectionElements: List<RegexParser.Collection_elemContext>,
+    isNegated: Boolean,
+    includesEOL: Boolean,
+  ): NFA {
     val individualChars: HashSet<Char> = HashSet()
-    val ranges: ArrayList<CollectionRange> = ArrayList()
+    val range: ArrayList<CollectionRange> = ArrayList()
     val charClasses: ArrayList<(Char) -> Boolean> = ArrayList()
     val collectionElementVisitor = CollectionElementVisitor()
     var containsEOL = false
@@ -518,7 +532,8 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
           hasUpperCase = hasUpperCase || element.char.isUpperCase()
           individualChars.add(element.char)
         }
-        is CollectionElement.CharacterRange -> ranges.add(CollectionRange(element.start, element.end))
+
+        is CollectionElement.CharacterRange -> range.add(CollectionRange(element.start, element.end))
         is CollectionElement.CharacterClassExpression -> charClasses.add(element.predicate)
       }
     }
@@ -526,7 +541,7 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
     /**
      * If the collection is empty, match literally with '[]', or '[^]' if negated
      */
-    if (individualChars.isEmpty() && ranges.isEmpty() && charClasses.isEmpty())
+    if (individualChars.isEmpty() && range.isEmpty() && charClasses.isEmpty())
       return if (isNegated) NFA.fromMatcher(CharacterMatcher('['))
         .concatenate(NFA.fromMatcher(CharacterMatcher('^')))
         .concatenate(NFA.fromMatcher(CharacterMatcher(']')))
@@ -536,7 +551,7 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
     return NFA.fromMatcher(
       CollectionMatcher(
         individualChars,
-        ranges,
+        range,
         charClasses,
         isNegated,
         includesEOL || containsEOL
@@ -630,7 +645,8 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
 
   override fun visitLine(ctx: RegexParser.LineContext): NFA {
     return NFA.fromMatcher(
-      AtLineMatcher(ctx.text.substring(if (ctx.text[0] == '\\') 2 else 1, ctx.text.length - 1).toInt()))
+      AtLineMatcher(ctx.text.substring(if (ctx.text[0] == '\\') 2 else 1, ctx.text.length - 1).toInt())
+    )
   }
 
   override fun visitBeforeLine(ctx: RegexParser.BeforeLineContext): NFA {
@@ -688,7 +704,9 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
   }
 
   override fun visitOptionallyMatched(ctx: RegexParser.OptionallyMatchedContext): NFA {
-    if (ctx.atoms.isEmpty()) { return NFA.fromSingleState() } // TODO: Throw E70 error
+    if (ctx.atoms.isEmpty()) {
+      return NFA.fromSingleState()
+    } // TODO: Throw E70 error
 
     val nfa = NFA.fromSingleState()
     for (atom in ctx.atoms) nfa.concatenate(visit(atom).optional(true))
@@ -717,12 +735,11 @@ internal object PatternVisitor : RegexParserBaseVisitor<NFA>() {
     )
   }
 
-  private fun cleanLiteralChar(str : String): Char {
+  private fun cleanLiteralChar(str: String): Char {
     return if (str.length == 2 && str[0] == '\\') {
       hasUpperCase = hasUpperCase || str[1].isUpperCase()
       str[1]
-    }
-    else {
+    } else {
       hasUpperCase = hasUpperCase || str[0].isUpperCase()
       str[0]
     }

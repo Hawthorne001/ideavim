@@ -8,17 +8,31 @@
 
 package org.jetbrains.plugins.ideavim.ex.implementation.commands
 
+import com.intellij.idea.TestFor
 import com.maddyhome.idea.vim.VimPlugin
+import com.maddyhome.idea.vim.api.injector
+import com.maddyhome.idea.vim.api.options
 import com.maddyhome.idea.vim.history.HistoryConstants
-import com.maddyhome.idea.vim.state.mode.Mode
+import com.maddyhome.idea.vim.newapi.vim
 import org.jetbrains.plugins.ideavim.SkipNeovimReason
 import org.jetbrains.plugins.ideavim.TestWithoutNeovim
 import org.jetbrains.plugins.ideavim.VimTestCase
 import org.junit.jupiter.api.Test
 
 class GlobalCommandTest : VimTestCase() {
+  companion object {
+    private val initialText = """
+                A Discovery
+    
+                I found it in a legendary land
+                all rocks and lavender and tufted grass,
+                where it was settled on some sodden sand
+                hard by the torrent of a mountain pass. 
+    """.trimIndent()
+  }
+
   @Test
-  fun `test default range`() {
+  fun `test delete search term in default range of whole file`() {
     doTest(
       "g/found/d",
       initialText,
@@ -33,7 +47,7 @@ class GlobalCommandTest : VimTestCase() {
   }
 
   @Test
-  fun `test default range first line`() {
+  fun `test delete first line in default range`() {
     doTest(
       "g/Discovery/d",
       initialText,
@@ -48,7 +62,7 @@ class GlobalCommandTest : VimTestCase() {
   }
 
   @Test
-  fun `test default range last line`() {
+  fun `test delete last line in default range`() {
     doTest(
       "g/torrent/d",
       initialText,
@@ -63,7 +77,7 @@ class GlobalCommandTest : VimTestCase() {
   }
 
   @Test
-  fun `test two lines`() {
+  fun `test delete multiple matching lines`() {
     doTest(
       "g/it/d",
       initialText,
@@ -77,7 +91,7 @@ class GlobalCommandTest : VimTestCase() {
   }
 
   @Test
-  fun `test two lines force`() {
+  fun `test delete multiple non-matching lines with global-bang`() {
     doTest(
       "g!/it/d",
       initialText,
@@ -89,7 +103,7 @@ class GlobalCommandTest : VimTestCase() {
   }
 
   @Test
-  fun `test vglobal`() {
+  fun `test delete multiple non-matching lines with vglobal`() {
     doTest(
       "v/it/d",
       initialText,
@@ -101,7 +115,7 @@ class GlobalCommandTest : VimTestCase() {
   }
 
   @Test
-  fun `test current line`() {
+  fun `test delete nothing if not found in current line`() {
     doTest(
       ".g/found/d",
       initialText,
@@ -110,7 +124,7 @@ class GlobalCommandTest : VimTestCase() {
   }
 
   @Test
-  fun `test current line right place`() {
+  fun `test delete current line if matching`() {
     doTest(
       ".g/found/d",
       """
@@ -174,6 +188,54 @@ class GlobalCommandTest : VimTestCase() {
     )
   }
 
+  // VIM-3348
+  @Test
+  fun `test substitution`() {
+    doTest(
+      "g/red cow/s//green horse/g",
+      """
+        |in the big race a red cow is in the lead
+        |in the big race a red car is in the lead
+        |in the big race a red cow is in the lead
+      """.trimMargin(),
+      """
+        |in the big race a green horse is in the lead
+        |in the big race a red car is in the lead
+        |in the big race a green horse is in the lead
+      """.trimMargin()
+    )
+  }
+
+  @Test
+  fun `test match ignores case`() {
+    doTest(
+      exCommand("g/test/p"),
+      """
+        |one test
+        |two
+        |three Test
+        |four
+        |five TEST
+      """.trimMargin(),
+      """
+        |one test
+        |two
+        |three Test
+        |four
+        |five TEST
+      """.trimMargin()
+    ) {
+      enterCommand("set ignorecase")
+    }
+    assertExOutput(
+      """
+        |one test
+        |three Test
+        |five TEST
+      """.trimMargin()
+    )
+  }
+
   @Test
   fun `test check history`() {
     VimPlugin.getHistory().clear()
@@ -219,39 +281,81 @@ class GlobalCommandTest : VimTestCase() {
 
   @TestWithoutNeovim(SkipNeovimReason.DIFFERENT)
   @Test
-  fun `test g with one separator and pattern`() {
+  fun `test print matching line if no command`() {
     doTest(
       "g/found",
       initialText,
       initialText,
     )
-    assertExOutput("I found it in a legendary land\n")
+    assertExOutput(
+      """
+      g/found
+      I found it in a legendary land""".trimIndent()
+    )
   }
 
   @TestWithoutNeovim(SkipNeovimReason.DIFFERENT)
   @Test
-  fun `test g with one separator and pattern and separator`() {
+  fun `test print multiple matching line if no command`() {
     doTest(
-      "g/found",
+      "g/it",
       initialText,
       initialText,
     )
-    assertExOutput("I found it in a legendary land\n")
+    assertExOutput(
+      """
+      |g/it
+      |I found it in a legendary land
+      |where it was settled on some sodden sand
+      """.trimMargin()
+    )
   }
 
-  private fun doTest(command: String, before: String, after: String) {
-    doTest(listOf(exCommand(command)), before, after, Mode.NORMAL())
+  @TestWithoutNeovim(SkipNeovimReason.DIFFERENT)
+  @Test
+  fun `test print multiple matching line if no command with number option`() {
+    configureByText(initialText)
+    val editor = fixture.editor.vim
+    injector.options(editor).number = true
+    typeText(commandToKeys(":g/it"))
+    assertExOutput(
+      """
+      |g/it
+      |3 I found it in a legendary land
+      |5 where it was settled on some sodden sand
+      """.trimMargin()
+    )
+    injector.options(editor).number = false
   }
 
-  companion object {
-    private val initialText = """
-                A Discovery
-    
-                I found it in a legendary land
-                all rocks and lavender and tufted grass,
-                where it was settled on some sodden sand
-                hard by the torrent of a mountain pass. 
-    """.trimIndent()
+  @TestWithoutNeovim(SkipNeovimReason.DIFFERENT)
+  @Test
+  fun `test print matching lines if no command and no trailing separator`() {
+    doTest(
+      "g/found/",
+      initialText,
+      initialText,
+    )
+    assertExOutput(
+      """
+      g/found/
+      I found it in a legendary land""".trimIndent()
+    )
+  }
+
+  @TestWithoutNeovim(SkipNeovimReason.DIFFERENT)
+  @Test
+  fun `test print matching lines if no command and no trailing separator with number option`() {
+    configureByText(initialText)
+    val editor = fixture.editor.vim
+    injector.options(editor).number = true
+    typeText(commandToKeys(":g/found/"))
+    assertExOutput(
+      """
+      g/found/
+      3 I found it in a legendary land""".trimIndent()
+    )
+    injector.options(editor).number = false
   }
 
   @Test
@@ -273,5 +377,73 @@ class GlobalCommandTest : VimTestCase() {
                 hard by the torrent of a mountain pass. 
       """.trimIndent(),
     )
+  }
+
+  @Test
+  @TestFor(issues = ["VIM-3501"])
+  fun `test global is executed once per line`() {
+    doTest(
+      "g/aaa/d",
+      """
+aaa bbb ccc aaa aaa
+bbbbbb
+bbbbbb
+aaa bbb ccc aaa aaa aaa aaa aaa
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+end
+      """.trimIndent(),
+      """
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+end
+      """.trimIndent(),
+    )
+  }
+
+  @Test
+  @TestFor(issues = ["VIM-3517"])
+  fun `test global used as a creative substitute alternative`() {
+    val textBefore = """
+aaa bbb ccc aaa aaa
+bbbbbb
+bbbbbb
+aaa bbb ccc aaa aaa aaa aaa aaa
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+end
+      """.trimIndent()
+    val textAfter = """
+replacement bbb ccc replacement replacement
+bbbbbb
+bbbbbb
+replacement bbb ccc replacement replacement replacement replacement replacement
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+bbbbbb
+end
+      """.trimIndent()
+    configureByText(textBefore)
+    typeText(commandToKeys(":g/aaa"))
+    assertState(textBefore)
+    typeText(commandToKeys(":g//s//replacement/g"))
+    assertState(textAfter)
+  }
+
+  private fun doTest(command: String, before: String, after: String) {
+    doTest(listOf(exCommand(command)), before, after)
   }
 }

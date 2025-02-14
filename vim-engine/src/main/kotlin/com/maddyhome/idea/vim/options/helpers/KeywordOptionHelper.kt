@@ -14,19 +14,19 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.options.OptionAccessScope
 import java.util.regex.Pattern
 
-public object KeywordOptionHelper {
+object KeywordOptionHelper {
 
   private const val allLettersRegex = "\\p{L}"
   private val validationPattern =
     Pattern.compile("(\\^?(([^0-9^]|[0-9]{1,3})-([^0-9]|[0-9]{1,3})|([^0-9^]|[0-9]{1,3})),)*\\^?(([^0-9^]|[0-9]{1,3})-([^0-9]|[0-9]{1,3})|([^0-9]|[0-9]{1,3})),?$")
 
-  public fun isValueInvalid(value: String): Boolean {
+  fun isValueInvalid(value: String): Boolean {
     val values = parseValues(value)
     val specs = valuesToValidatedAndReversedSpecs(values)
     return values == null || specs == null
   }
 
-  public fun isKeyword(editor: VimEditor, c: Char): Boolean {
+  fun isKeyword(editor: VimEditor, c: Char): Boolean {
     if (c.code >= '\u0100'.code) {
       return true
     }
@@ -46,11 +46,12 @@ public object KeywordOptionHelper {
   // TODO: Come up with a more friendly API for IdeaVim-EasyMotion
   // Perhaps pass in VimEditor, or allow retrieving the list of KeywordSpec
   @Deprecated("Only maintained for compatibility. Does not handle local-to-buffer iskeyword option")
-  public fun toRegex(): List<String> {
+  fun toRegex(): List<String> {
     // 'iskeyword' is a local-to-buffer option, but we're not passed an editor. We have to use the global value. We also
     // have to use the fallback window to avoid any asserts about accessing a non-global option as a global option.
     // This is not ideal and should not be replicated in non-deprecated code
-    val isKeyword = injector.optionGroup.getOptionValue(Options.iskeyword, OptionAccessScope.GLOBAL(injector.fallbackWindow)).value
+    val isKeyword =
+      injector.optionGroup.getOptionValue(Options.iskeyword, OptionAccessScope.GLOBAL(injector.fallbackWindow)).value
     val specs = valuesToValidatedAndReversedSpecs(parseValues(isKeyword)) ?: emptyList()
     return specs.map {
       it.initializeValues()
@@ -64,7 +65,7 @@ public object KeywordOptionHelper {
     }
   }
 
-  public fun parseValues(content: String): List<String>? {
+  fun parseValues(content: String): List<String>? {
     if (!validationPattern.matcher(content).matches()) {
       return null
     }

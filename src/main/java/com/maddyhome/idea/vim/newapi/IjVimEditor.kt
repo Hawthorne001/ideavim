@@ -30,16 +30,20 @@ import com.maddyhome.idea.vim.api.VimCaret
 import com.maddyhome.idea.vim.api.VimCaretListener
 import com.maddyhome.idea.vim.api.VimDocument
 import com.maddyhome.idea.vim.api.VimEditor
+import com.maddyhome.idea.vim.api.VimEditorBase
 import com.maddyhome.idea.vim.api.VimFoldRegion
+import com.maddyhome.idea.vim.api.VimIndentConfig
 import com.maddyhome.idea.vim.api.VimScrollingModel
 import com.maddyhome.idea.vim.api.VimSelectionModel
 import com.maddyhome.idea.vim.api.VimVisualPosition
 import com.maddyhome.idea.vim.api.VirtualFile
 import com.maddyhome.idea.vim.api.injector
-import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.common.IndentConfig
 import com.maddyhome.idea.vim.common.LiveRange
+import com.maddyhome.idea.vim.common.ModeChangeListener
 import com.maddyhome.idea.vim.common.TextRange
+import com.maddyhome.idea.vim.common.VimEditorReplaceMask
+import com.maddyhome.idea.vim.common.forgetAllReplaceMasks
 import com.maddyhome.idea.vim.group.visual.vimSetSystemBlockSelectionSilently
 import com.maddyhome.idea.vim.helper.EditorHelper
 import com.maddyhome.idea.vim.helper.StrictMode
@@ -49,16 +53,20 @@ import com.maddyhome.idea.vim.helper.fileSize
 import com.maddyhome.idea.vim.helper.getTopLevelEditor
 import com.maddyhome.idea.vim.helper.inExMode
 import com.maddyhome.idea.vim.helper.isTemplateActive
+import com.maddyhome.idea.vim.helper.replaceMask
 import com.maddyhome.idea.vim.helper.vimChangeActionSwitchMode
 import com.maddyhome.idea.vim.helper.vimLastSelectionType
+import com.maddyhome.idea.vim.impl.state.VimStateMachineImpl
 import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.state.mode.inBlockSelection
+import com.maddyhome.idea.vim.undo.VimKeyBasedUndoService
+import com.maddyhome.idea.vim.undo.VimTimestampBasedUndoService
 import org.jetbrains.annotations.ApiStatus
 import java.lang.System.identityHashCode
 
 @ApiStatus.Internal
-internal class IjVimEditor(editor: Editor) : MutableLinearEditor() {
+internal class IjVimEditor(editor: Editor) : MutableLinearEditor, VimEditorBase() {
   companion object {
     // For cases where Editor does not have a project (for some reason)
     // It's something IJ Platform related and stored here because of this reason
@@ -70,6 +78,19 @@ internal class IjVimEditor(editor: Editor) : MutableLinearEditor() {
   // TBH, I don't like the names. Need to think a bit more about this
   val editor = editor.getTopLevelEditor()
   val originalEditor = editor
+  override var replaceMask: VimEditorReplaceMask?
+    get() = editor.replaceMask
+    set(value) {
+      editor.replaceMask = value
+    }
+
+  override fun updateMode(mode: Mode) {
+    (injector.vimState as VimStateMachineImpl).mode = mode
+  }
+
+  override fun updateIsReplaceCharacter(isReplaceCharacter: Boolean) {
+    (injector.vimState as VimStateMachineImpl).isReplaceCharacter = isReplaceCharacter
+  }
 
   override val lfMakesNewLine: Boolean = true
   override var vimChangeActionSwitchMode: Mode?
@@ -77,6 +98,8 @@ internal class IjVimEditor(editor: Editor) : MutableLinearEditor() {
     set(value) {
       editor.vimChangeActionSwitchMode = value
     }
+  override val indentConfig: VimIndentConfig
+    get() = IndentConfig.create(editor)
 
   override fun fileSize(): Long = editor.fileSize.toLong()
 
@@ -117,7 +140,16 @@ internal class IjVimEditor(editor: Editor) : MutableLinearEditor() {
     return atPosition
   }
 
-  override fun insertText(atPosition: Int, text: CharSequence) {
+  override fun insertText(caret: VimCaret, atPosition: Int, text: CharSequence) {
+    if (injector.vimState.mode is Mode.INSERT) {
+      val undo = injector.undo
+      when (undo) {
+        is VimKeyBasedUndoService -> undo.setInsertNonMergeUndoKey()
+        is VimTimestampBasedUndoService -> {
+          undo.startInsertSequence(caret, atPosition, System.nanoTime())
+        }
+      }
+    }
     editor.document.insertString(atPosition, text)
   }
 
@@ -256,7 +288,8 @@ internal class IjVimEditor(editor: Editor) : MutableLinearEditor() {
     val vf = EditorHelper.getVirtualFile(editor)
     return vf?.let {
       object : VirtualFile {
-        override val path = vf.path
+        override val path: String = vf.path
+        override val protocol: String = vf.fileSystem.protocol
       }
     }
   }
@@ -353,7 +386,7 @@ internal class IjVimEditor(editor: Editor) : MutableLinearEditor() {
   }
 
   override fun extractProtocol(): String? {
-    return EditorHelper.getVirtualFile(editor)?.getUrl()?.let { VirtualFileManager.extractProtocol(it) }
+    return EditorHelper.getVirtualFile(editor)?.url?.let { VirtualFileManager.extractProtocol(it) }
   }
 
   override val projectId = editor.project?.let { injector.file.getProjectId(it) } ?: DEFAULT_PROJECT_ID
@@ -362,8 +395,8 @@ internal class IjVimEditor(editor: Editor) : MutableLinearEditor() {
     return editor.visualPositionToOffset(VisualPosition(position.line, position.column, position.leansRight))
   }
 
-  override fun exitInsertMode(context: ExecutionContext, operatorArguments: OperatorArguments) {
-    editor.exitInsertMode(context.ij, operatorArguments)
+  override fun exitInsertMode(context: ExecutionContext) {
+    editor.exitInsertMode(context.ij)
   }
 
   override fun exitSelectModeNative(adjustCaret: Boolean) {
@@ -428,13 +461,14 @@ internal class IjVimEditor(editor: Editor) : MutableLinearEditor() {
       // This is faster than simply calling Editor#logicalToVisualPosition
       return editor.offsetToVisualLine(editor.document.getLineStartOffset(line))
     }
-    return super.bufferLineToVisualLine(line)
+    return super<MutableLinearEditor>.bufferLineToVisualLine(line)
   }
 
   override var insertMode: Boolean
     get() = (editor as? EditorEx)?.isInsertMode ?: false
     set(value) {
       (editor as? EditorEx)?.isInsertMode = value
+      forgetAllReplaceMasks()
     }
 
   override val document: VimDocument
@@ -494,10 +528,21 @@ internal class IjVimEditor(editor: Editor) : MutableLinearEditor() {
   }
 }
 
-public val Editor.vim: VimEditor
+val Editor.vim: VimEditor
   get() = IjVimEditor(this)
-public val VimEditor.ij: Editor
+val VimEditor.ij: Editor
   get() = (this as IjVimEditor).editor
 
-public val com.intellij.openapi.util.TextRange.vim: TextRange
+val com.intellij.openapi.util.TextRange.vim: TextRange
   get() = TextRange(this.startOffset, this.endOffset)
+
+internal class InsertTimeRecorder : ModeChangeListener {
+  override fun modeChanged(editor: VimEditor, oldMode: Mode) {
+    editor as IjVimEditor
+    if (oldMode == Mode.INSERT) {
+      val undo = injector.undo as? VimTimestampBasedUndoService ?: return
+      val nanoTime = System.nanoTime()
+      editor.forEachCaret { undo.endInsertSequence(it, it.offset, nanoTime) }
+    }
+  }
+}

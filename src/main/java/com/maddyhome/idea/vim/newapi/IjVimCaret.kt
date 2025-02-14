@@ -21,8 +21,11 @@ import com.maddyhome.idea.vim.api.VimCaret
 import com.maddyhome.idea.vim.api.VimCaretBase
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.VimVisualPosition
+import com.maddyhome.idea.vim.common.InsertSequence
 import com.maddyhome.idea.vim.common.LiveRange
 import com.maddyhome.idea.vim.group.visual.VisualChange
+import com.maddyhome.idea.vim.helper.currentInsert
+import com.maddyhome.idea.vim.helper.insertHistory
 import com.maddyhome.idea.vim.helper.lastSelectionInfo
 import com.maddyhome.idea.vim.helper.markStorage
 import com.maddyhome.idea.vim.helper.moveToInlayAwareOffset
@@ -42,6 +45,7 @@ internal class IjVimCaret(val caret: Caret) : VimCaretBase() {
     get() {
       var storage = this.caret.registerStorage
       if (storage == null) {
+        initInjector() // To initialize injector used in CaretRegisterStorageBase
         storage = CaretRegisterStorageBase(this)
         this.caret.registerStorage = storage
       } else if (storage.caret != this) {
@@ -82,6 +86,7 @@ internal class IjVimCaret(val caret: Caret) : VimCaretBase() {
     set(value) {
       caret.vimLastColumn = value
     }
+
   override fun resetLastColumn() = caret.resetVimLastColumn()
   override val selectionStart: Int
     get() = caret.selectionStart
@@ -169,15 +174,44 @@ internal class IjVimCaret(val caret: Caret) : VimCaretBase() {
     caret.removeSelection()
   }
 
+  internal fun getInsertSequenceForTime(time: Long): InsertSequence? {
+    val insertHistory = caret.insertHistory
+    for (i in insertHistory.lastIndex downTo 0) {
+      val insertInfo = insertHistory[i]
+      if (time > insertInfo.endNanoTime) return null
+      if (time >= insertInfo.startNanoTime) return insertInfo
+    }
+    return null
+  }
+
+  internal fun startInsertSequence(startOffset: Int, startNanoTime: Long) {
+    if (caret.currentInsert != null) {
+      return
+    }
+    caret.currentInsert = InsertSequence(startOffset, startNanoTime)
+  }
+
+  internal fun endInsertSequence(endInsert: Int, endNanoTime: Long) {
+    val currentInsert = caret.currentInsert ?: return
+    currentInsert.endNanoTime = endNanoTime
+    currentInsert.endOffset = endInsert
+    caret.insertHistory.add(currentInsert)
+    caret.currentInsert = null
+  }
+
+  internal fun abandonCurrentInsertSequece() {
+    caret.currentInsert = null
+  }
+
   override fun equals(other: Any?): Boolean = this.caret == (other as? IjVimCaret)?.caret
 
   override fun hashCode(): Int = this.caret.hashCode()
 }
 
-public val VimCaret.ij: Caret
+val VimCaret.ij: Caret
   get() = (this as IjVimCaret).caret
-public val ImmutableVimCaret.ij: Caret
+val ImmutableVimCaret.ij: Caret
   get() = (this as IjVimCaret).caret
 
-public val Caret.vim: VimCaret
+val Caret.vim: VimCaret
   get() = IjVimCaret(this)

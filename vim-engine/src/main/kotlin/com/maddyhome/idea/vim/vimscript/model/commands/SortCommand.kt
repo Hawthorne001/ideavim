@@ -16,8 +16,7 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.ex.ExException
 import com.maddyhome.idea.vim.ex.ranges.LineRange
-import com.maddyhome.idea.vim.ex.ranges.Ranges
-import com.maddyhome.idea.vim.state.mode.inBlockSelection
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 import java.util.*
 
@@ -27,23 +26,20 @@ import java.util.*
  */
 // todo make it multicaret
 @ExCommand(command = "sor[t]")
-public data class SortCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges, argument) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.WRITABLE)
+data class SortCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier, argument) {
+
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.WRITABLE)
 
   @Throws(ExException::class)
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     val sortOption = parseSortOption(argument)
     val lineComparator = LineComparator(sortOption.ignoreCase, sortOption.numeric, sortOption.reverse)
-    if (editor.inBlockSelection) {
-      val primaryCaret = editor.primaryCaret()
-      val range = getSortLineRange(editor, primaryCaret)
-      val worked = injector.changeGroup.sortRange(editor, primaryCaret, range, lineComparator, sortOption)
-      primaryCaret.moveToInlayAwareOffset(
-        injector.motion.moveCaretToLineStartSkipLeading(editor, range.startLine),
-      )
-      return if (worked) ExecutionResult.Success else ExecutionResult.Error
-    }
-
     var worked = true
     for (caret in editor.carets()) {
       val range = getSortLineRange(editor, caret)
@@ -59,11 +55,8 @@ public data class SortCommand(val ranges: Ranges, val argument: String) : Comman
   private fun getSortLineRange(editor: VimEditor, caret: VimCaret): LineRange {
     val range = getLineRange(editor, caret)
 
-    // Something like "30,20sort" gets converted to "20,30sort"
-    val normalizedRange = if (range.endLine < range.startLine) LineRange(range.endLine, range.startLine) else range
-
     // If we don't have a range, we either have "sort", a selection, or a block
-    if (normalizedRange.endLine - normalizedRange.startLine == 0) {
+    if (range.size == 1) {
       // If we have a selection.
       val selectionModel = editor.getSelectionModel()
       return if (selectionModel.hasSelection()) {
@@ -79,15 +72,15 @@ public data class SortCommand(val ranges: Ranges, val argument: String) : Comman
       } // If we have a generic selection, i.e. "sort" entire document
     }
 
-    return normalizedRange
+    return range
   }
 
   private fun parseSortOption(arg: String): SortOption {
     val patternRange = extractPattern(arg)
     val pattern = patternRange?.let { arg.substring(it) }
-    val flags = patternRange?.let { arg.removeRange(patternRange)} ?: arg
+    val flags = patternRange?.let { arg.removeRange(patternRange) } ?: arg
     return SortOption(
-      reverse = "!" in flags,
+      reverse = modifier == CommandModifier.BANG,
       ignoreCase = "i" in flags,
       numeric = "n" in flags,
       unique = "u" in flags,
@@ -97,7 +90,7 @@ public data class SortCommand(val ranges: Ranges, val argument: String) : Comman
   }
 
   private fun extractPattern(arg: String): IntRange? {
-    val startIndex = arg.indexOf('/',)
+    val startIndex = arg.indexOf('/')
     val endIndex = arg.indexOf('/', startIndex + 2)
     if (startIndex >= 0 && endIndex >= 0) {
       return IntRange(startIndex + 1, endIndex - 1)
@@ -142,11 +135,11 @@ public data class SortCommand(val ranges: Ranges, val argument: String) : Comman
   }
 }
 
-public data class SortOption(
+data class SortOption(
   val ignoreCase: Boolean,
   val numeric: Boolean,
   val reverse: Boolean,
   val unique: Boolean,
   val sortOnPattern: Boolean,
-  val pattern: String? = null
+  val pattern: String? = null,
 )

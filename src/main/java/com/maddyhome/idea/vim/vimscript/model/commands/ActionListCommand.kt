@@ -15,10 +15,8 @@ import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.ex.ExOutputModel
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.helper.MessageHelper
-import com.maddyhome.idea.vim.newapi.ij
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 import java.util.*
 
@@ -26,10 +24,16 @@ import java.util.*
  * @author smartbomb
  */
 @ExCommand(command = "actionl[ist]")
-internal data class ActionListCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges) {
+internal data class ActionListCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier) {
+
   override val argFlags = flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
 
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     val lineSeparator = "\n"
     val searchPattern = argument.trim().lowercase(Locale.getDefault()).split("*")
     val actionManager = ActionManager.getInstance()
@@ -45,7 +49,9 @@ internal data class ActionListCommand(val ranges: Ranges, val argument: String) 
       .filter { line -> searchPattern.all { it in line.lowercase(Locale.getDefault()) } }
       .joinToString(lineSeparator)
 
-    ExOutputModel.getInstance(editor.ij).output(MessageHelper.message("ex.show.all.actions.0.1", lineSeparator, actions))
+    val outputPanel = injector.outputPanel.getOrCreate(editor, context)
+    outputPanel.addText(MessageHelper.message("ex.show.all.actions.0.1", lineSeparator, actions))
+    outputPanel.show()
     return ExecutionResult.Success
   }
 }

@@ -19,7 +19,7 @@ import com.maddyhome.idea.vim.handler.ChangeEditorActionHandler
 import com.maddyhome.idea.vim.state.mode.Mode
 
 @CommandOrMotion(keys = ["o"], modes = [com.intellij.vim.annotations.Mode.NORMAL])
-public class InsertNewLineBelowAction : ChangeEditorActionHandler.SingleExecution() {
+class InsertNewLineBelowAction : ChangeEditorActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.INSERT
 
   override fun execute(
@@ -35,7 +35,7 @@ public class InsertNewLineBelowAction : ChangeEditorActionHandler.SingleExecutio
 }
 
 @CommandOrMotion(keys = ["O"], modes = [com.intellij.vim.annotations.Mode.NORMAL])
-public class InsertNewLineAboveAction : ChangeEditorActionHandler.SingleExecution() {
+class InsertNewLineAboveAction : ChangeEditorActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.INSERT
 
   override fun execute(
@@ -65,7 +65,7 @@ private fun insertNewLineAbove(editor: VimEditor, context: ExecutionContext) {
   val moves: MutableSet<Pair<VimCaret, Int>> = HashSet()
   for (caret in editor.nativeCarets()) {
     val offset: Int
-    if (caret.getVisualPosition().line == 0) {
+    if (caret.getBufferPosition().line == 0) {
       // Fake indenting for the first line. Works well for plain text to match the existing indent
       offset = injector.motion.moveCaretToCurrentLineStartSkipLeading(editor, caret)
       firstLiners.add(caret)

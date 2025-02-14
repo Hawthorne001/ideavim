@@ -23,11 +23,11 @@ import com.maddyhome.idea.vim.state.mode.selectionType
 import java.util.*
 import kotlin.math.min
 
-public object VisualOperation {
+object VisualOperation {
   /**
    * Get [VisualChange] of current visual operation
    */
-  public fun getRange(editor: VimEditor, caret: ImmutableVimCaret, cmdFlags: EnumSet<CommandFlags>): VisualChange {
+  fun getRange(editor: VimEditor, caret: ImmutableVimCaret, cmdFlags: EnumSet<CommandFlags>): VisualChange {
     var (start, end) = caret.run {
       if (editor.inBlockSelection) sort(vimSelectionStart, offset) else sort(selectionStart, selectionEnd)
     }
@@ -47,7 +47,7 @@ public object VisualOperation {
     } else {
       when (type) {
         SelectionType.LINE_WISE -> ep.column
-        SelectionType.CHARACTER_WISE -> if (lines > 1) ep.column - injector.visualMotionGroup.selectionAdj else ep.column - sp.column
+        CHARACTER_WISE -> if (lines > 1) ep.column - injector.visualMotionGroup.selectionAdj else ep.column - sp.column
         SelectionType.BLOCK_WISE -> ep.column - sp.column + 1
       }
     }
@@ -58,12 +58,12 @@ public object VisualOperation {
   /**
    * Calculate end offset of [VisualChange]
    */
-  public fun calculateRange(editor: VimEditor, range: VisualChange, count: Int, caret: ImmutableVimCaret): Int {
+  fun calculateRange(editor: VimEditor, range: VisualChange, count: Int, caret: ImmutableVimCaret): Int {
     var (lines, chars, type) = range
     if (type == SelectionType.LINE_WISE || type == SelectionType.BLOCK_WISE || lines > 1) {
       lines *= count
     }
-    if (type == SelectionType.CHARACTER_WISE && lines == 1 || type == SelectionType.BLOCK_WISE) {
+    if (type == CHARACTER_WISE && lines == 1 || type == SelectionType.BLOCK_WISE) {
       chars *= count
     }
     val sp = caret.getBufferPosition()
@@ -72,10 +72,11 @@ public object VisualOperation {
 
     return when (type) {
       SelectionType.LINE_WISE -> injector.motion.moveCaretToLineWithSameColumn(editor, endLine, caret)
-      SelectionType.CHARACTER_WISE -> when {
+      CHARACTER_WISE -> when {
         lines > 1 -> injector.motion.moveCaretToLineStart(editor, endLine) + min(editor.lineLength(endLine), chars)
         else -> editor.normalizeOffset(sp.line, caret.offset + chars - 1, true)
       }
+
       SelectionType.BLOCK_WISE -> {
         val endColumn = min(editor.lineLength(endLine), sp.column + chars - 1)
         editor.bufferPositionToOffset(BufferPosition(endLine, endColumn))

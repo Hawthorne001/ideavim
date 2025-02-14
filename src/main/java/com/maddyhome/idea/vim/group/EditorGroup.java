@@ -8,9 +8,7 @@
 
 package com.maddyhome.idea.vim.group;
 
-import com.intellij.execution.impl.ConsoleViewImpl;
 import com.intellij.find.EditorSearchSession;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.client.ClientAppSession;
 import com.intellij.openapi.client.ClientKind;
 import com.intellij.openapi.client.ClientSessionsManager;
@@ -20,13 +18,12 @@ import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.editor.*;
 import com.intellij.openapi.editor.event.CaretEvent;
 import com.intellij.openapi.editor.event.CaretListener;
+import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.ex.EditorGutterComponentEx;
 import com.intellij.openapi.project.Project;
-import com.maddyhome.idea.vim.KeyHandler;
 import com.maddyhome.idea.vim.VimPlugin;
 import com.maddyhome.idea.vim.api.*;
 import com.maddyhome.idea.vim.helper.CaretVisualAttributesHelperKt;
-import com.maddyhome.idea.vim.helper.CommandStateHelper;
 import com.maddyhome.idea.vim.helper.EditorHelper;
 import com.maddyhome.idea.vim.helper.UserDataManager;
 import com.maddyhome.idea.vim.newapi.IjVimDocument;
@@ -38,10 +35,14 @@ import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.util.Collection;
+import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static com.intellij.openapi.editor.EditorSettings.LineNumerationType;
 import static com.maddyhome.idea.vim.api.VimInjectorKt.injector;
 import static com.maddyhome.idea.vim.api.VimInjectorKt.options;
 import static com.maddyhome.idea.vim.newapi.IjVimInjectorKt.ijOptions;
@@ -55,12 +56,31 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
 
   private Boolean isKeyRepeat = null;
 
+  // TODO: Get rid of this custom line converter once we support soft wraps properly
+  // The builtin relative line converter looks like it's using Vim's logical lines for counting, where a Vim logical
+  // line is a buffer line, or a single line representing a fold of several buffer lines. This converter is counting
+  // screen lines (but badly - if you're on the second line of a wrapped line, it still counts like you're on the first.
+  // We really want to use Vim logical lines, but we don't currently support them for movement - we move by screen line.
+
   private final CaretListener myLineNumbersCaretListener = new CaretListener() {
     @Override
     public void caretPositionChanged(@NotNull CaretEvent e) {
-      final boolean requiresRepaint = e.getNewPosition().line != e.getOldPosition().line;
-      if (requiresRepaint && options(injector, new IjVimEditor(e.getEditor())).getRelativenumber()) {
-        repaintRelativeLineNumbers(e.getEditor());
+      // We don't get notified when the IDE's settings change, so make sure we're up-to-date when the caret moves
+      final Editor editor = e.getEditor();
+      boolean relativenumber = ijOptions(injector, new IjVimEditor(editor)).getRelativenumber();
+      if (relativenumber) {
+        if (!hasRelativeLineNumbersInstalled(editor)) {
+          installRelativeLineNumbers(editor);
+        }
+        else {
+          // We must repaint on each caret move, so we update when caret's visual line doesn't match logical line
+          repaintRelativeLineNumbers(editor);
+        }
+      }
+      else {
+        if (hasRelativeLineNumbersInstalled(editor)) {
+          removeRelativeLineNumbers(editor);
+        }
       }
     }
   };
@@ -73,11 +93,10 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
     editor.getCaretModel().addCaretListener(myLineNumbersCaretListener);
     UserDataManager.setVimEditorGroup(editor, true);
 
-    UserDataManager.setVimLineNumbersInitialState(editor, editor.getSettings().isLineNumbersShown());
     updateLineNumbers(editor);
   }
 
-  private void deinitLineNumbers(@NotNull Editor editor, boolean isReleasing) {
+  private void deinitLineNumbers(@NotNull Editor editor) {
     if (isProjectDisposed(editor) || !supportsVimLineNumbers(editor) || !UserDataManager.getVimEditorGroup(editor)) {
       return;
     }
@@ -86,14 +105,6 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
     UserDataManager.setVimEditorGroup(editor, false);
 
     removeRelativeLineNumbers(editor);
-
-    // Don't reset the built in line numbers if we're releasing the editor. If we do, EditorSettings.setLineNumbersShown
-    // can cause the editor to refresh settings and can call into FileManagerImpl.getCachedPsiFile AFTER FileManagerImpl
-    // has been disposed (Closing the project with a Find Usages result showing a preview panel is a good repro case).
-    // See IDEA-184351 and VIM-1671
-    if (!isReleasing) {
-      setBuiltinLineNumbers(editor, UserDataManager.getVimLineNumbersInitialState(editor));
-    }
   }
 
   private static boolean supportsVimLineNumbers(final @NotNull Editor editor) {
@@ -107,39 +118,20 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
   }
 
   private static void updateLineNumbers(final @NotNull Editor editor) {
-    final EffectiveOptions options = options(injector, new IjVimEditor(editor));
-    final boolean relativeNumber = options.getRelativenumber();
-    final boolean number = options.getNumber();
-
-    final boolean showBuiltinEditorLineNumbers = shouldShowBuiltinLineNumbers(editor, number, relativeNumber);
-
-    final EditorSettings settings = editor.getSettings();
-    if (settings.isLineNumbersShown() ^ showBuiltinEditorLineNumbers) {
-      // Update line numbers later since it may be called from a caret listener
-      // on the caret move and it may move the caret internally
-      ApplicationManager.getApplication().invokeLater(() -> {
-        if (editor.isDisposed()) return;
-        setBuiltinLineNumbers(editor, showBuiltinEditorLineNumbers);
-      });
+    final boolean isLineNumbersShown = editor.getSettings().isLineNumbersShown();
+    if (!isLineNumbersShown) {
+      return;
     }
 
-    if (relativeNumber) {
+    final LineNumerationType lineNumerationType = editor.getSettings().getLineNumerationType();
+    if (lineNumerationType == LineNumerationType.RELATIVE || lineNumerationType == LineNumerationType.HYBRID) {
       if (!hasRelativeLineNumbersInstalled(editor)) {
         installRelativeLineNumbers(editor);
       }
     }
-    else if (hasRelativeLineNumbersInstalled(editor)) {
+    else {
       removeRelativeLineNumbers(editor);
     }
-  }
-
-  private static boolean shouldShowBuiltinLineNumbers(final @NotNull Editor editor, boolean number, boolean relativeNumber) {
-    final boolean initialState = UserDataManager.getVimLineNumbersInitialState(editor);
-    return initialState || number || relativeNumber;
-  }
-
-  private static void setBuiltinLineNumbers(final @NotNull Editor editor, boolean show) {
-    editor.getSettings().setLineNumbersShown(show);
   }
 
   private static boolean hasRelativeLineNumbersInstalled(final @NotNull Editor editor) {
@@ -164,7 +156,8 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
 
   private static void repaintRelativeLineNumbers(final @NotNull Editor editor) {
     final EditorGutter gutter = editor.getGutter();
-    final EditorGutterComponentEx gutterComponent = gutter instanceof EditorGutterComponentEx ? (EditorGutterComponentEx) gutter : null;
+    final EditorGutterComponentEx gutterComponent =
+      gutter instanceof EditorGutterComponentEx ? (EditorGutterComponentEx)gutter : null;
     if (gutterComponent != null) {
       gutterComponent.repaint();
     }
@@ -216,51 +209,24 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
 
     initLineNumbers(editor);
 
-    // We add Vim bindings to all opened editors, even read-only editors. We also add bindings to editors that are used
-    // elsewhere in the IDE, rather than just for editing project files. This includes editors used as part of the UI,
-    // such as the VCS commit message, or used as read-only viewers for text output, such as log files in run
-    // configurations or the Git Console tab. And editors are used for interactive stdin/stdout for console-based run
-    // configurations.
-    // We want to provide an intuitive experience for working with these additional editors, so we automatically switch
-    // to INSERT mode for interactive editors. Recognising these can be a bit tricky.
-    // These additional interactive editors are not file-based, but must have a writable document. However, log output
-    // documents are also writable (the IDE is writing new content as it becomes available) just not user-editable. So
-    // we must also check that the editor is not in read-only "viewer" mode (this includes "rendered" mode, which is
-    // read-only and also hides the caret).
-    // Furthermore, the interactive stdin/stdout console output is hosted in a read-only editor, but it can still be
-    // edited. The `ConsoleViewImpl` class installs a typing handler that ignores the editor's `isViewer` property and
-    // allows typing if the associated process (if any) is still running. We can get the editor's console view and check
-    // this ourselves, but we have to wait until the editor has finished initialising before it's available in user
-    // data.
-    // Note that we need a similar check in `VimEditor.isWritable` to allow Escape to work to exit insert mode. We need
-    // to know that a read-only editor that is hosting a console view with a running process can be treated as writable.
-    Runnable switchToInsertMode = () -> {
-      ExecutionContext.Editor context = injector.getExecutionContextManager().onEditor(new IjVimEditor(editor), null);
-      VimPlugin.getChange().insertBeforeCursor(new IjVimEditor(editor), context);
-      KeyHandler.getInstance().reset(new IjVimEditor(editor));
-    };
-    if (!editor.isViewer() &&
-        !EditorHelper.isFileEditor(editor) &&
-        editor.getDocument().isWritable() &&
-        !CommandStateHelper.inInsertMode(editor)) {
-      switchToInsertMode.run();
+    // Listen for changes to the font size, so we can hide the ex text field/output panel
+    if (editor instanceof EditorEx editorEx) {
+      editorEx.addPropertyChangeListener(FontSizeChangeListener.INSTANCE);
     }
-    ApplicationManager.getApplication().invokeLater(
-      () -> {
-        if (editor.isDisposed()) return;
-        ConsoleViewImpl consoleView = editor.getUserData(ConsoleViewImpl.CONSOLE_VIEW_IN_EDITOR_VIEW);
-        if (consoleView != null && consoleView.isRunning() && !CommandStateHelper.inInsertMode(editor)) {
-          switchToInsertMode.run();
-        }
-      });
-    updateCaretsVisualAttributes(new IjVimEditor(editor));
+
+    if (injector.getApplication().isUnitTest()) {
+      updateCaretsVisualAttributes(new IjVimEditor(editor));
+    }
   }
 
-  public void editorDeinit(@NotNull Editor editor, boolean isReleased) {
-    deinitLineNumbers(editor, isReleased);
+  public void editorDeinit(@NotNull Editor editor) {
+    deinitLineNumbers(editor);
     UserDataManager.unInitializeEditor(editor);
     VimPlugin.getKey().unregisterShortcutKeys(new IjVimEditor(editor));
     CaretVisualAttributesHelperKt.removeCaretsVisualAttributes(editor);
+    if (editor instanceof EditorEx editorEx) {
+      editorEx.removePropertyChangeListener(FontSizeChangeListener.INSTANCE);
+    }
   }
 
   public void notifyIdeaJoin(@Nullable Project project, @NotNull VimEditor editor) {
@@ -272,9 +238,8 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
     VimPlugin.getNotifications(project).notifyAboutIdeaJoin(editor);
   }
 
-  @Nullable
   @Override
-  public Element getState() {
+  public @Nullable Element getState() {
     Element element = new Element("editor");
     saveData(element);
     return element;
@@ -287,18 +252,18 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
 
   @Override
   public void notifyIdeaJoin(@NotNull VimEditor editor) {
-    notifyIdeaJoin(((IjVimEditor) editor).getEditor().getProject(), editor);
+    notifyIdeaJoin(((IjVimEditor)editor).getEditor().getProject(), editor);
   }
 
   @Override
   public void updateCaretsVisualAttributes(@NotNull VimEditor editor) {
-    Editor ijEditor = ((IjVimEditor) editor).getEditor();
+    Editor ijEditor = ((IjVimEditor)editor).getEditor();
     CaretVisualAttributesHelperKt.updateCaretsVisualAttributes(ijEditor);
   }
 
   @Override
   public void updateCaretsVisualPosition(@NotNull VimEditor editor) {
-    Editor ijEditor = ((IjVimEditor) editor).getEditor();
+    Editor ijEditor = ((IjVimEditor)editor).getEditor();
     CaretVisualAttributesHelperKt.updateCaretsVisualAttributes(ijEditor);
   }
 
@@ -322,17 +287,18 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
   private static class RelativeLineNumberConverter implements LineNumberConverter {
     @Override
     public Integer convert(@NotNull Editor editor, int lineNumber) {
-      final boolean number = options(injector, new IjVimEditor(editor)).getNumber();
+      final IjVimEditor ijVimEditor = new IjVimEditor(editor);
+      final boolean number = options(injector, ijVimEditor).getNumber();
       final int caretLine = editor.getCaretModel().getLogicalPosition().line;
 
       // lineNumber is 1 based
-      if (number && (lineNumber - 1) == caretLine) {
-        return lineNumber;
+      if ((lineNumber - 1) == caretLine) {
+        return number ? lineNumber : 0;
       }
       else {
-        final int visualLine = new IjVimEditor(editor).bufferLineToVisualLine(lineNumber - 1);
-        final int currentVisualLine = new IjVimEditor(editor).bufferLineToVisualLine(caretLine);
-        return Math.abs(currentVisualLine - visualLine);
+        final int visualLine = ijVimEditor.bufferLineToVisualLine(lineNumber - 1);
+        final int caretVisualLine = editor.getCaretModel().getVisualPosition().line;
+        return Math.abs(caretVisualLine - visualLine);
       }
     }
 
@@ -344,43 +310,75 @@ public class EditorGroup implements PersistentStateComponent<Element>, VimEditor
 
   @Override
   public @NotNull Collection<VimEditor> getEditorsRaw() {
-    return getLocalEditors()
-      .map(IjVimEditor::new)
+    return getLocalEditors().map(IjVimEditor::new).collect(Collectors.toList());
+  }
+
+  @Override
+  public @NotNull Collection<VimEditor> getEditors() {
+    return getLocalEditors().filter(UserDataManager::getVimInitialised).map(IjVimEditor::new)
       .collect(Collectors.toList());
   }
 
-  @NotNull
   @Override
-  public Collection<VimEditor> getEditors() {
-    return getLocalEditors()
-      .filter(UserDataManager::getVimInitialised)
-      .map(IjVimEditor::new)
-      .collect(Collectors.toList());
-  }
-
-  @NotNull
-  @Override
-  public Collection<VimEditor> getEditors(@NotNull VimDocument buffer) {
+  public @NotNull Collection<VimEditor> getEditors(@NotNull VimDocument buffer) {
     final Document document = ((IjVimDocument)buffer).getDocument();
-    return getLocalEditors()
-      .filter(editor -> UserDataManager.getVimInitialised(editor) && editor.getDocument().equals(document))
-      .map(IjVimEditor::new)
-      .collect(Collectors.toList());
+    return getLocalEditors().filter(
+        editor -> UserDataManager.getVimInitialised(editor) && editor.getDocument().equals(document))
+      .map(IjVimEditor::new).collect(Collectors.toList());
   }
 
   private Stream<Editor> getLocalEditors() {
     // Always fetch local editors. If we're hosting a Code With Me session, any connected guests will create hidden
     // editors to handle syntax highlighting, completion requests, etc. We need to make sure that IdeaVim only makes
-    // changes (e.g. adding search highlights) to local editors, so things don't incorrectly flow through to any Clients.
+    // changes (e.g., adding search highlights) to local editors so things don't incorrectly flow through to any Clients.
     // In non-CWM scenarios, or if IdeaVim is installed on the Client, there are only ever local editors, so this will
     // also work there. In Gateway remote development scenarios, IdeaVim should not be installed on the host, only the
     // Client, so all should work there too.
     // Note that most IdeaVim operations are in response to interactive keystrokes, which would mean that
     // ClientEditorManager.getCurrentInstance would return local editors. However, some operations are in response to
-    // events such as document change (to update search highlights) and these can come from CWM guests, and we'd get the
-    // remote editors.
-    // This invocation will always get local editors, regardless of current context.
-    final ClientAppSession localSession = ClientSessionsManager.getAppSessions(ClientKind.LOCAL).get(0);
-    return localSession.getService(ClientEditorManager.class).editors();
+    // events such as document change (to update search highlights), and these can come from CWM guests, and we'd get
+    // the remote editors.
+    // This invocation will always get local editors, regardless of the current context.
+    List<ClientAppSession> appSessions = ClientSessionsManager.getAppSessions(ClientKind.LOCAL);
+    if (!appSessions.isEmpty()) {
+      ClientAppSession localSession = appSessions.get(0);
+      return localSession.getService(ClientEditorManager.class).editors();
+    }
+    else {
+      return Stream.empty();
+    }
+  }
+
+  /**
+   * Listens to property changes from the editor to hide ex text field/output panel when the editor's font is zoomed
+   */
+  private static class FontSizeChangeListener implements PropertyChangeListener {
+    public static FontSizeChangeListener INSTANCE = new FontSizeChangeListener();
+
+    @Override
+    public void propertyChange(PropertyChangeEvent evt) {
+      if (VimPlugin.isNotEnabled()) return;
+      if (evt.getPropertyName().equals(EditorEx.PROP_FONT_SIZE)) {
+        Object source = evt.getSource();
+        if (source instanceof Editor editor) {
+          // The editor is being zoomed, so hide the command line or output panel, if they're being shown. On the one
+          // hand, it's a little rude to cancel a command line for the user, but on the other, the panels obscure the
+          // zoom indicator, so it looks nicer if we hide them.
+          // Note that IDE scale is handled by LafManager.lookAndFeelChanged
+          VimCommandLine activeCommandLine = injector.getCommandLine().getActiveCommandLine();
+          if (activeCommandLine != null) {
+            activeCommandLine.close(true, false);
+          }
+          VimOutputPanel outputPanel = injector.getOutputPanel().getCurrentOutputPanel();
+          if (outputPanel != null) {
+            outputPanel.close();
+          }
+          VimModalInput modalInput = injector.getModalInput().getCurrentModalInput();
+          if (modalInput != null) {
+            modalInput.deactivate(true, false);
+          }
+        }
+      }
+    }
   }
 }

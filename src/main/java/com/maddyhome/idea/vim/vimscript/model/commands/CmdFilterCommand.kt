@@ -15,10 +15,11 @@ import com.intellij.vim.annotations.ExCommand
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimEditor
+import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.ex.ExException
-import com.maddyhome.idea.vim.ex.ExOutputModel
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
+import com.maddyhome.idea.vim.ex.ranges.toTextRange
 import com.maddyhome.idea.vim.helper.EditorHelper
 import com.maddyhome.idea.vim.helper.MessageHelper
 import com.maddyhome.idea.vim.newapi.ij
@@ -28,23 +29,30 @@ import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
  * see "h :!"
  */
 @ExCommand(command = "!")
-internal data class CmdFilterCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges) {
+internal data class CmdFilterCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier) {
+
   override val argFlags = flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.SELF_SYNCHRONIZED)
 
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     logger.debug("execute")
     val command = buildString {
       var inBackslash = false
       argument.forEach { c ->
         when {
           !inBackslash && c == '!' -> {
-            val last = VimPlugin.getProcess().lastCommand
+            val last = lastCommand
             if (last.isNullOrEmpty()) {
               VimPlugin.showMessage(MessageHelper.message("e_noprev"))
               return ExecutionResult.Error
             }
             append(last)
           }
+
           !inBackslash && c == '%' -> {
             val virtualFile = EditorHelper.getVirtualFile(editor.ij)
             if (virtualFile == null) {
@@ -57,6 +65,7 @@ internal data class CmdFilterCommand(val ranges: Ranges, val argument: String) :
             }
             append(virtualFile.path)
           }
+
           else -> append(c)
         }
 
@@ -70,15 +79,18 @@ internal data class CmdFilterCommand(val ranges: Ranges, val argument: String) :
 
     val workingDirectory = editor.ij.project?.basePath
     return try {
-      if (ranges.size() == 0) {
+      if (range.size() == 0) {
         // Show command output in a window
         VimPlugin.getProcess().executeCommand(editor, command, null, workingDirectory)?.let {
-          ExOutputModel.getInstance(editor.ij).output(it)
+          val outputPanel = injector.outputPanel.getOrCreate(editor, context)
+          outputPanel.addText(it)
+          outputPanel.show()
         }
+        lastCommand = command
         ExecutionResult.Success
       } else {
         // Filter
-        val range = this.getTextRange(editor, false)
+        val range = getLineRange(editor).toTextRange(editor)
         val input = editor.ij.document.charsSequence.subSequence(range.startOffset, range.endOffset)
         VimPlugin.getProcess().executeCommand(editor, command, input, workingDirectory)?.let {
           ApplicationManager.getApplication().runWriteAction {
@@ -91,9 +103,10 @@ internal data class CmdFilterCommand(val ranges: Ranges, val argument: String) :
             }
           }
         }
+        lastCommand = command
         ExecutionResult.Success
       }
-    } catch (e: ProcessCanceledException) {
+    } catch (_: ProcessCanceledException) {
       throw ExException("Command terminated")
     } catch (e: Exception) {
       throw ExException(e.message)
@@ -102,5 +115,6 @@ internal data class CmdFilterCommand(val ranges: Ranges, val argument: String) :
 
   companion object {
     private val logger = Logger.getInstance(CmdFilterCommand::class.java.name)
+    private var lastCommand: String? = null
   }
 }

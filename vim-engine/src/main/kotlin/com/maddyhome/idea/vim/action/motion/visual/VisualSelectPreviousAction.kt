@@ -16,13 +16,12 @@ import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.group.visual.vimSetSelection
 import com.maddyhome.idea.vim.handler.VimActionHandler
-import com.maddyhome.idea.vim.helper.vimStateMachine
 
 /**
  * @author vlan
  */
 @CommandOrMotion(keys = ["gv"], modes = [Mode.NORMAL])
-public class VisualSelectPreviousAction : VimActionHandler.SingleExecution() {
+class VisualSelectPreviousAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
   override fun execute(

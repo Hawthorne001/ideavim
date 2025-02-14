@@ -20,12 +20,9 @@ import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.IdeActionHandler
 import com.maddyhome.idea.vim.handler.VimActionHandler
 import com.maddyhome.idea.vim.helper.enumSetOf
+import com.maddyhome.idea.vim.undo.VimKeyBasedUndoService
+import com.maddyhome.idea.vim.undo.VimTimestampBasedUndoService
 import java.util.*
-
-@CommandOrMotion(keys = ["<C-H>", "<BS>"], modes = [Mode.INSERT])
-internal class VimEditorBackSpace : IdeActionHandler(IdeActions.ACTION_EDITOR_BACKSPACE) {
-  override val type: Command.Type = Command.Type.DELETE
-}
 
 @CommandOrMotion(keys = ["<Del>"], modes = [Mode.INSERT])
 internal class VimEditorDelete : IdeActionHandler(IdeActions.ACTION_EDITOR_DELETE) {
@@ -36,6 +33,23 @@ internal class VimEditorDelete : IdeActionHandler(IdeActions.ACTION_EDITOR_DELET
 internal class VimEditorDown : IdeActionHandler(IdeActions.ACTION_EDITOR_MOVE_CARET_DOWN) {
   override val type: Command.Type = Command.Type.MOTION
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_CLEAR_STROKES)
+
+  override fun execute(
+    editor: VimEditor,
+    context: ExecutionContext,
+    cmd: Command,
+    operatorArguments: OperatorArguments,
+  ): Boolean {
+    val undo = injector.undo
+    when (undo) {
+      is VimKeyBasedUndoService -> undo.setMergeUndoKey()
+      is VimTimestampBasedUndoService -> {
+        val nanoTime = System.nanoTime()
+        editor.forEachCaret { undo.endInsertSequence(it, it.offset, nanoTime) }
+      }
+    }
+    return super.execute(editor, context, cmd, operatorArguments)
+  }
 }
 
 @CommandOrMotion(keys = ["<Tab>", "<C-I>"], modes = [Mode.INSERT])
@@ -48,14 +62,36 @@ internal class VimEditorTab : IdeActionHandler(IdeActions.ACTION_EDITOR_TAB) {
 internal class VimEditorUp : IdeActionHandler(IdeActions.ACTION_EDITOR_MOVE_CARET_UP) {
   override val type: Command.Type = Command.Type.MOTION
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_CLEAR_STROKES)
+
+  override fun execute(
+    editor: VimEditor,
+    context: ExecutionContext,
+    cmd: Command,
+    operatorArguments: OperatorArguments,
+  ): Boolean {
+    val undo = injector.undo
+    when (undo) {
+      is VimKeyBasedUndoService -> undo.setMergeUndoKey()
+      is VimTimestampBasedUndoService -> {
+        val nanoTime = System.nanoTime()
+        editor.forEachCaret { undo.endInsertSequence(it, it.offset, nanoTime) }
+      }
+    }
+    return super.execute(editor, context, cmd, operatorArguments)
+  }
 }
 
 @CommandOrMotion(keys = ["K"], modes = [Mode.NORMAL])
 internal class VimQuickJavaDoc : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
-  override fun execute(editor: VimEditor, context: ExecutionContext, cmd: Command, operatorArguments: OperatorArguments): Boolean {
-    injector.actionExecutor.executeAction(IdeActions.ACTION_QUICK_JAVADOC, context)
+  override fun execute(
+    editor: VimEditor,
+    context: ExecutionContext,
+    cmd: Command,
+    operatorArguments: OperatorArguments,
+  ): Boolean {
+    injector.actionExecutor.executeAction(editor, IdeActions.ACTION_QUICK_JAVADOC, context)
     return true
   }
 }

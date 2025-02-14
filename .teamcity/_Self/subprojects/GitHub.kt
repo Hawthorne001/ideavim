@@ -1,6 +1,5 @@
 package _Self.subprojects
 
-import _Self.Constants
 import _Self.IdeaVimBuildType
 import _Self.vcsRoots.GitHubPullRequest
 import jetbrains.buildServer.configs.kotlin.v2019_2.CheckoutMode
@@ -16,16 +15,15 @@ object GitHub : Project({
   name = "Pull Requests checks"
   description = "Automatic checking of GitHub Pull Requests"
 
-  buildType(Github("clean test", "Tests"))
+  buildType(GithubBuildType("clean test", "Tests"))
 })
 
-class Github(command: String, desc: String) : IdeaVimBuildType({
+class GithubBuildType(command: String, desc: String) : IdeaVimBuildType({
   name = "GitHub Pull Requests $desc"
   description = "Test GitHub pull requests $desc"
 
   params {
     param("env.ORG_GRADLE_PROJECT_downloadIdeaSources", "false")
-    param("env.ORG_GRADLE_PROJECT_ideaVersion", Constants.GITHUB_TESTS)
     param("env.ORG_GRADLE_PROJECT_instrumentPluginCode", "false")
   }
 

@@ -17,21 +17,20 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.api.lineLength
 import com.maddyhome.idea.vim.command.Argument
 import com.maddyhome.idea.vim.command.Command
-import com.maddyhome.idea.vim.command.CommandFlags
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.diagnostic.debug
 import com.maddyhome.idea.vim.diagnostic.vimLogger
 import com.maddyhome.idea.vim.handler.ChangeEditorActionHandler
-import com.maddyhome.idea.vim.helper.enumSetOf
-import java.util.*
+import com.maddyhome.idea.vim.state.KeyHandlerState
 
 @CommandOrMotion(keys = ["r"], modes = [Mode.NORMAL])
-public class ChangeCharacterAction : ChangeEditorActionHandler.ForEachCaret() {
+class ChangeCharacterAction : ChangeEditorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.CHANGE
-
   override val argumentType: Argument.Type = Argument.Type.DIGRAPH
 
-  override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_ALLOW_DIGRAPH)
+  override fun onStartWaitingForArgument(editor: VimEditor, context: ExecutionContext, keyState: KeyHandlerState) {
+    editor.isReplaceCharacter = true
+  }
 
   override fun execute(
     editor: VimEditor,
@@ -40,7 +39,12 @@ public class ChangeCharacterAction : ChangeEditorActionHandler.ForEachCaret() {
     argument: Argument?,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    return argument != null && changeCharacter(editor, caret, operatorArguments.count1, argument.character)
+    return argument is Argument.Character && changeCharacter(
+      editor,
+      caret,
+      operatorArguments.count1,
+      argument.character
+    )
   }
 }
 

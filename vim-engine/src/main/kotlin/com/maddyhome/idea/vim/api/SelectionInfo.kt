@@ -11,7 +11,6 @@ package com.maddyhome.idea.vim.api
 import com.maddyhome.idea.vim.common.TextRange
 import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.SelectionType
-import com.maddyhome.idea.vim.state.mode.mode
 import kotlin.math.max
 import kotlin.math.min
 
@@ -28,36 +27,41 @@ import kotlin.math.min
  * @property end            The BufferPosition marking the end of the selection or caret.
  * @property selectionType  The type of selection being represented (character-wise, line-wise, etc.).
  */
-public data class SelectionInfo(public var start: BufferPosition?, public var end: BufferPosition?, public val selectionType: SelectionType) {
+data class SelectionInfo(var start: BufferPosition?, var end: BufferPosition?, val selectionType: SelectionType) {
   /**
    * Provides the start and end BufferPositions in sorted order as a Pair. This property ensures a sequential
    * order of positions, regardless of the caret movement direction.
    */
-  public val startEndSorted: Pair<BufferPosition, BufferPosition>? get() = sortBufferPositions(start, end)
+  val startEndSorted: Pair<BufferPosition, BufferPosition>? get() = sortBufferPositions(start, end)
 
-  public fun getSelectionRange(editor: VimEditor): TextRange? {
+  fun getSelectionRange(editor: VimEditor): TextRange? {
     val (sortedStart, sortedEnd) = startEndSorted ?: return null
     return when (selectionType) {
-      SelectionType.CHARACTER_WISE -> TextRange(editor.bufferPositionToOffset(sortedStart), editor.bufferPositionToOffset(sortedEnd) + 1)
+      SelectionType.CHARACTER_WISE -> TextRange(
+        editor.bufferPositionToOffset(sortedStart),
+        editor.bufferPositionToOffset(sortedEnd) + 1
+      )
+
       SelectionType.LINE_WISE -> {
         val startOffset = editor.getLineStartOffset(sortedStart.line)
         val endOffset = editor.getLineEndOffset(sortedEnd.line, true) + 1
         return TextRange(startOffset, endOffset)
       }
+
       SelectionType.BLOCK_WISE -> {
         val topLine = sortedStart.line
         val bottomLine = sortedEnd.line
         val leftColumn = min(sortedStart.column, sortedEnd.column)
         val rightColumn = max(sortedStart.column, sortedEnd.column)
 
-        val startOffsets  = (topLine .. bottomLine).map { editor.getOffset(it, leftColumn) }.toIntArray()
-        val endOffsets  = (topLine .. bottomLine).map { editor.getOffset(it, rightColumn) + 1 }.toIntArray()
+        val startOffsets = (topLine..bottomLine).map { editor.getOffset(it, leftColumn) }.toIntArray()
+        val endOffsets = (topLine..bottomLine).map { editor.getOffset(it, rightColumn) + 1 }.toIntArray()
         return TextRange(startOffsets, endOffsets)
       }
     }
   }
 
-  public fun isSelected(offset: Int, editor: VimEditor): Boolean {
+  fun isSelected(offset: Int, editor: VimEditor): Boolean {
     return getSelectionRange(editor)?.contains(offset) ?: false
   }
 
@@ -70,8 +74,8 @@ public data class SelectionInfo(public var start: BufferPosition?, public var en
     }
   }
 
-  public companion object {
-    public fun collectCurrentSelectionInfo(caret: VimCaret): SelectionInfo? {
+  companion object {
+    fun collectCurrentSelectionInfo(caret: VimCaret): SelectionInfo? {
       val editor = caret.editor
       val mode = editor.mode
 

@@ -17,7 +17,12 @@ package com.maddyhome.idea.vim.group
  * @param escaped If true, the method returns the index of char only if it's escaped. If false, it returns the index only if it's not escaped. If null, escaping is not considered.
  * @return The index of the character, or null if it could not be located within the specified range.
  */
-public fun CharSequence.indexOfOrNull(char: Char, startIndex: Int = 0, endIndex: Int = length, escaped: Boolean? = null): Int? {
+fun CharSequence.indexOfOrNull(
+  char: Char,
+  startIndex: Int = 0,
+  endIndex: Int = length,
+  escaped: Boolean? = null,
+): Int? {
   return indexOfAnyOrNull(charArrayOf(char), startIndex, endIndex, escaped)
 }
 
@@ -30,7 +35,12 @@ public fun CharSequence.indexOfOrNull(char: Char, startIndex: Int = 0, endIndex:
  * @param escaped If true, the method returns the index of char only if it's escaped. If false, it returns the index only if it's not escaped. If null, escaping is not considered.
  * @return The first index of any character from the array, or null if none could be found within the specified range.
  */
-public fun CharSequence.indexOfAnyOrNull(chars: CharArray, startIndex: Int = 0, endIndex: Int = length, escaped: Boolean? = null): Int? {
+fun CharSequence.indexOfAnyOrNull(
+  chars: CharArray,
+  startIndex: Int = 0,
+  endIndex: Int = length,
+  escaped: Boolean? = null,
+): Int? {
   for (i in startIndex until kotlin.math.min(endIndex, length)) {
     if (chars.contains(get(i)) &&
       (
@@ -44,6 +54,7 @@ public fun CharSequence.indexOfAnyOrNull(chars: CharArray, startIndex: Int = 0, 
   }
   return null
 }
+
 /**
  * Searches for any character from the specified array in reverse and returns its index. Supports optional escaping.
  *
@@ -53,7 +64,12 @@ public fun CharSequence.indexOfAnyOrNull(chars: CharArray, startIndex: Int = 0, 
  * @param escaped If true, the method returns the index of char only if it's escaped. If false, it returns the index only if it's not escaped. If null, escaping is not considered.
  * @return The last index of any character from the array, or null if none could be found within the specified range.
  */
-public fun CharSequence.lastIndexOfAnyOrNull(chars: CharArray, startIndex: Int = lastIndex, endIndex: Int = -1, escaped: Boolean? = null): Int? {
+fun CharSequence.lastIndexOfAnyOrNull(
+  chars: CharArray,
+  startIndex: Int = lastIndex,
+  endIndex: Int = -1,
+  escaped: Boolean? = null,
+): Int? {
   for (i in startIndex downTo kotlin.math.max(endIndex + 1, 0)) {
     if (chars.contains(get(i)) &&
       (

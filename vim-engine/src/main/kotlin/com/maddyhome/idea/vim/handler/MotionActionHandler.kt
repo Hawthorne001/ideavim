@@ -13,7 +13,6 @@ import com.maddyhome.idea.vim.api.ImmutableVimCaret
 import com.maddyhome.idea.vim.api.VimCaret
 import com.maddyhome.idea.vim.api.VimCaretListener
 import com.maddyhome.idea.vim.api.VimEditor
-import com.maddyhome.idea.vim.api.getOffset
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.api.normalizeOffset
 import com.maddyhome.idea.vim.command.Argument
@@ -25,8 +24,11 @@ import com.maddyhome.idea.vim.diagnostic.VimLogger
 import com.maddyhome.idea.vim.diagnostic.vimLogger
 import com.maddyhome.idea.vim.helper.StrictMode
 import com.maddyhome.idea.vim.helper.isEndAllowed
+import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.inBlockSelection
 import com.maddyhome.idea.vim.state.mode.inVisualMode
+import com.maddyhome.idea.vim.undo.VimKeyBasedUndoService
+import com.maddyhome.idea.vim.undo.VimTimestampBasedUndoService
 
 /**
  * @author Alex Plate
@@ -34,11 +36,11 @@ import com.maddyhome.idea.vim.state.mode.inVisualMode
  * Base class for motion handlers.
  * @see [MotionActionHandler.SingleExecution] and [MotionActionHandler.ForEachCaret]
  */
-public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
+sealed class MotionActionHandler : EditorActionHandlerBase(false) {
   /**
    * By default, we unfold collapsed regions after caret movement inside the fold
    */
-  public open val keepFold: Boolean = false
+  open val keepFold: Boolean = false
 
   /**
    * Base class for motion handlers.
@@ -46,7 +48,7 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
    *   called 5 times.
    * @see [MotionActionHandler.SingleExecution] for only one execution
    */
-  public abstract class ForEachCaret : MotionActionHandler() {
+  abstract class ForEachCaret : MotionActionHandler() {
 
     /**
      * This method should return new offset for [caret]
@@ -54,7 +56,7 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
      *   called 5 times.
      * The method executes only once it there is block selection.
      */
-    public abstract fun getOffset(
+    abstract fun getOffset(
       editor: VimEditor,
       caret: ImmutableVimCaret,
       context: ExecutionContext,
@@ -69,13 +71,13 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
    *   [getOffset] will be called 1 time.
    * @see [MotionActionHandler.ForEachCaret] for per-caret execution
    */
-  public abstract class SingleExecution : MotionActionHandler() {
+  abstract class SingleExecution : MotionActionHandler() {
     /**
      * This method should return new offset for primary caret
      * It executes once for all carets. That means that if you have 5 carets, [getOffset] will be
      *   called 1 time.
      */
-    public abstract fun getOffset(
+    abstract fun getOffset(
       editor: VimEditor,
       context: ExecutionContext,
       argument: Argument?,
@@ -83,20 +85,43 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
     ): Motion
   }
 
-  public abstract val motionType: MotionType
+  /**
+   * Support for commands that can be executed either once or for each caret depending on some circumstances
+   * TODO this class should not exist at all, changes to command execution are required
+   */
+  abstract class AmbiguousExecution : MotionActionHandler() {
+    abstract fun getMotionActionHandler(argument: Argument?): MotionActionHandler
+
+    final override fun process(cmd: Command) {
+      super.process(cmd)
+    }
+
+    final override fun postExecute(
+      editor: VimEditor,
+      context: ExecutionContext,
+      cmd: Command,
+      operatorArguments: OperatorArguments,
+    ) {
+      super.postExecute(editor, context, cmd, operatorArguments)
+    }
+  }
+
+  abstract val motionType: MotionType
 
   final override val type: Command.Type = Command.Type.MOTION
 
-  public fun getHandlerOffset(
+  fun getHandlerOffset(
     editor: VimEditor,
     caret: ImmutableVimCaret,
     context: ExecutionContext,
     argument: Argument?,
     operatorArguments: OperatorArguments,
   ): Motion {
-    return when (this) {
-      is SingleExecution -> getOffset(editor, context, argument, operatorArguments)
-      is ForEachCaret -> getOffset(editor, caret, context, argument, operatorArguments)
+    val handler = if (this is AmbiguousExecution) this.getMotionActionHandler(argument) else this
+    return when (handler) {
+      is SingleExecution -> handler.getOffset(editor, context, argument, operatorArguments)
+      is ForEachCaret -> handler.getOffset(editor, caret, context, argument, operatorArguments)
+      is AmbiguousExecution -> throw RuntimeException("Ambiguous handler cannot hold another ambiguous handler")
     }
   }
 
@@ -107,11 +132,22 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    val blockSubmodeActive = editor.inBlockSelection
+    val blockSelectionActive = editor.inBlockSelection
 
-    when (this) {
+    val handler = if (this is AmbiguousExecution) this.getMotionActionHandler(cmd.argument) else this
+    when (handler) {
       is SingleExecution -> run {
-        val offset = getOffset(editor, context, cmd.argument, operatorArguments)
+        if (editor.mode == Mode.INSERT) {
+          val undo = injector.undo
+          when (undo) {
+            is VimKeyBasedUndoService -> undo.setMergeUndoKey()
+            is VimTimestampBasedUndoService -> {
+              val nanoTime = System.nanoTime()
+              editor.forEachCaret { undo.endInsertSequence(it, it.offset, nanoTime) }
+            }
+          }
+        }
+        val offset = handler.getOffset(editor, context, cmd.argument, operatorArguments)
 
         // In this scenario, caret is the primary caret
         when (offset) {
@@ -121,17 +157,19 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
           is Motion.NoMotion -> Unit
         }
       }
+
       is ForEachCaret -> run {
         when {
-          blockSubmodeActive || editor.carets().size == 1 -> {
+          blockSelectionActive || editor.carets().size == 1 -> {
             val primaryCaret = editor.primaryCaret()
-            doExecuteForEach(editor, primaryCaret, context, cmd, operatorArguments)
+            handler.doExecuteForEach(editor, primaryCaret, context, cmd, operatorArguments)
           }
+
           else -> {
             try {
               editor.addCaretListener(CaretMergingWatcher)
               editor.forEachCaret { caret ->
-                doExecuteForEach(
+                handler.doExecuteForEach(
                   editor,
                   caret,
                   context,
@@ -145,6 +183,8 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
           }
         }
       }
+
+      is AmbiguousExecution -> throw RuntimeException("Ambiguous handler cannot hold another ambiguous handler")
     }
 
     return true
@@ -157,6 +197,13 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ) {
+    if (editor.mode == Mode.INSERT) {
+      val undo = injector.undo
+      when (undo) {
+        is VimKeyBasedUndoService -> undo.setMergeUndoKey()
+        is VimTimestampBasedUndoService -> undo.endInsertSequence(caret, caret.offset, System.nanoTime())
+      }
+    }
     val offset = getOffset(editor, caret, context, cmd.argument, operatorArguments)
     when (offset) {
       is Motion.AdjustedOffset -> moveToAdjustedOffset(editor, caret, cmd, offset)
@@ -231,6 +278,18 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
     return resultOffset
   }
 
+  override fun postExecute(
+    editor: VimEditor,
+    context: ExecutionContext,
+    cmd: Command,
+    operatorArguments: OperatorArguments,
+  ) {
+    // If we're in single-execution Visual mode, return to Select. See `:help v_CTRL-O`
+    if ((editor.mode as? Mode.VISUAL)?.isSelectPending == true) {
+      injector.visualMotionGroup.processSingleVisualCommand(editor)
+    }
+  }
+
   private object CaretMergingWatcher : VimCaretListener {
     override fun caretRemoved(caret: ImmutableVimCaret?) {
       caret ?: return
@@ -252,7 +311,7 @@ public sealed class MotionActionHandler : EditorActionHandlerBase(false) {
     }
   }
 
-  public companion object {
-    public val logger: VimLogger = vimLogger<MotionActionHandler>()
+  companion object {
+    val logger: VimLogger = vimLogger<MotionActionHandler>()
   }
 }

@@ -13,16 +13,23 @@ import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.key.ShortcutOwner
 import com.maddyhome.idea.vim.key.ShortcutOwnerInfo
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 
 @ExCommand(command = "sethandler")
-public data class SetHandlerCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges, argument) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
+data class SetHandlerCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier, argument) {
 
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
+
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     return if (doCommand()) ExecutionResult.Success else ExecutionResult.Error
   }
 
@@ -35,7 +42,7 @@ public data class SetHandlerCommand(val ranges: Ranges, val argument: String) : 
     val key = try {
       val shortcut = args[0]
       if (shortcut.startsWith('<')) injector.parser.parseKeys(shortcut).first() else null
-    } catch (e: IllegalArgumentException) {
+    } catch (_: IllegalArgumentException) {
       null
     }
 
@@ -55,9 +62,9 @@ public data class SetHandlerCommand(val ranges: Ranges, val argument: String) : 
     return true
   }
 
-  public companion object {
+  companion object {
     // todo you should make me internal
-    public fun updateOwner(owner: ShortcutOwnerInfo.PerMode?, newData: String): ShortcutOwnerInfo.PerMode? {
+    fun updateOwner(owner: ShortcutOwnerInfo.PerMode?, newData: String): ShortcutOwnerInfo.PerMode? {
       if (owner == null) return null
       val split = newData.split(":", limit = 2)
       if (split.size != 2) return null

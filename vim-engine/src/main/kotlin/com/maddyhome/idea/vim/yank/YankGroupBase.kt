@@ -18,17 +18,15 @@ import com.maddyhome.idea.vim.api.getLineStartForOffset
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.Argument
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.common.TextRange
-import com.maddyhome.idea.vim.listener.VimYankListener
+import com.maddyhome.idea.vim.state.mode.SelectionType
 import org.jetbrains.annotations.Contract
 import kotlin.math.min
 
-public open class YankGroupBase : VimYankGroup {
-  private val yankListeners: MutableList<VimYankListener> = ArrayList()
-
+open class YankGroupBase : VimYankGroup {
   private fun yankRange(
     editor: VimEditor,
+    context: ExecutionContext,
     caretToRange: Map<ImmutableVimCaret, TextRange>,
     range: TextRange,
     type: SelectionType,
@@ -38,11 +36,11 @@ public open class YankGroupBase : VimYankGroup {
       caret.moveToOffset(offset)
     }
 
-    notifyListeners(editor, range)
+    injector.listenersNotifier.notifyYankPerformed(caretToRange)
 
     var result = true
     for ((caret, myRange) in caretToRange) {
-      result = caret.registerStorage.storeText(editor, myRange, type, false) && result
+      result = caret.registerStorage.storeText(editor, context, myRange, type, false) && result
     }
     return result
   }
@@ -83,8 +81,8 @@ public open class YankGroupBase : VimYankGroup {
     argument: Argument,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    val motion = argument.motion
-    val type = if (motion.isLinewiseMotion()) SelectionType.LINE_WISE else SelectionType.CHARACTER_WISE
+    val motion = argument as? Argument.Motion ?: return false
+    val motionType = motion.getMotionType()
 
     val nativeCaretCount = editor.nativeCarets().size
     if (nativeCaretCount <= 0) return false
@@ -93,7 +91,12 @@ public open class YankGroupBase : VimYankGroup {
     val ranges = ArrayList<Pair<Int, Int>>(nativeCaretCount)
 
     // This logic is from original vim
-    val startOffsets = if (argument.motion.action is MotionDownLess1FirstNonSpaceAction) null else HashMap<VimCaret, Int>(nativeCaretCount)
+    val startOffsets =
+      if (argument.motion is MotionDownLess1FirstNonSpaceAction) {
+        null
+      } else {
+        HashMap<VimCaret, Int>(nativeCaretCount)
+      }
 
     for (caret in editor.nativeCarets()) {
       val motionRange = injector.motion.getMotionRange(editor, caret, context, argument, operatorArguments)
@@ -105,17 +108,24 @@ public open class YankGroupBase : VimYankGroup {
       caretToRange[caret] = TextRange(motionRange.startOffset, motionRange.endOffset)
     }
 
-    val range = getTextRange(ranges, type) ?: return false
+    val range = getTextRange(ranges, motionType) ?: return false
 
     if (range.size() == 0) return false
 
     return yankRange(
       editor,
+      context,
       caretToRange,
       range,
-      type,
+      motionType,
       startOffsets,
     )
+  }
+
+  @Deprecated("Please use the same method, but with ExecutionContext")
+  override fun yankLine(editor: VimEditor, count: Int): Boolean {
+    val context = injector.executionContextManager.getEditorExecutionContext(editor)
+    return yankLine(editor, context, count)
   }
 
   /**
@@ -125,13 +135,14 @@ public open class YankGroupBase : VimYankGroup {
    * @param count  The number of lines to yank
    * @return true if able to yank the lines, false if not
    */
-  override fun yankLine(editor: VimEditor, count: Int): Boolean {
+  override fun yankLine(editor: VimEditor, context: ExecutionContext, count: Int): Boolean {
     val caretCount = editor.nativeCarets().size
     val ranges = ArrayList<Pair<Int, Int>>(caretCount)
     val caretToRange = HashMap<ImmutableVimCaret, TextRange>(caretCount)
     for (caret in editor.nativeCarets()) {
       val start = injector.motion.moveCaretToCurrentLineStart(editor, caret)
-      val end = min(injector.motion.moveCaretToRelativeLineEnd(editor, caret, count - 1, true) + 1, editor.fileSize().toInt())
+      val end =
+        min(injector.motion.moveCaretToRelativeLineEnd(editor, caret, count - 1, true) + 1, editor.fileSize().toInt())
 
       if (end == -1) continue
 
@@ -140,7 +151,13 @@ public open class YankGroupBase : VimYankGroup {
     }
 
     val range = getTextRange(ranges, SelectionType.LINE_WISE) ?: return false
-    return yankRange(editor, caretToRange, range, SelectionType.LINE_WISE, null)
+    return yankRange(editor, context, caretToRange, range, SelectionType.LINE_WISE, null)
+  }
+
+  @Deprecated("Please use the same method, but with ExecutionContext")
+  override fun yankRange(editor: VimEditor, range: TextRange?, type: SelectionType, moveCursor: Boolean): Boolean {
+    val context = injector.executionContextManager.getEditorExecutionContext(editor)
+    return yankRange(editor, context, range, type, moveCursor)
   }
 
   /**
@@ -151,7 +168,13 @@ public open class YankGroupBase : VimYankGroup {
    * @param type   The type of yank
    * @return true if able to yank the range, false if not
    */
-  override fun yankRange(editor: VimEditor, range: TextRange?, type: SelectionType, moveCursor: Boolean): Boolean {
+  override fun yankRange(
+    editor: VimEditor,
+    context: ExecutionContext,
+    range: TextRange?,
+    type: SelectionType,
+    moveCursor: Boolean,
+  ): Boolean {
     range ?: return false
     val caretToRange = HashMap<ImmutableVimCaret, TextRange>()
 
@@ -183,15 +206,9 @@ public open class YankGroupBase : VimYankGroup {
     }
 
     return if (moveCursor) {
-      yankRange(editor, caretToRange, range, type, startOffsets)
+      yankRange(editor, context, caretToRange, range, type, startOffsets)
     } else {
-      yankRange(editor, caretToRange, range, type, null)
+      yankRange(editor, context, caretToRange, range, type, null)
     }
-  }
-
-  override fun addListener(listener: VimYankListener): Boolean = yankListeners.add(listener)
-  override fun removeListener(listener: VimYankListener): Boolean = yankListeners.remove(listener)
-  override fun notifyListeners(editor: VimEditor, textRange: TextRange): Unit = yankListeners.forEach {
-    it.yankPerformed(editor, textRange)
   }
 }

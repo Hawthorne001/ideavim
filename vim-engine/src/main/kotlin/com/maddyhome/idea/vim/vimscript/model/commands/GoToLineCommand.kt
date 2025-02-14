@@ -13,17 +13,18 @@ import com.maddyhome.idea.vim.api.VimCaret
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 import java.lang.Integer.min
 
 /**
  * see "h :[range]"
  */
-public data class GoToLineCommand(val ranges: Ranges) :
-  Command.ForEachCaret(ranges) {
+data class GoToLineCommand(val range: Range) :
+  Command.ForEachCaret(range, CommandModifier.NONE) {
 
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_REQUIRED, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_REQUIRED, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
 
   override fun processCommand(
     editor: VimEditor,
@@ -31,10 +32,10 @@ public data class GoToLineCommand(val ranges: Ranges) :
     context: ExecutionContext,
     operatorArguments: OperatorArguments,
   ): ExecutionResult {
-    val line = min(this.getLine(editor, caret), editor.lineCount() - 1)
-
-    if (line >= 0) {
-      val offset = injector.motion.moveCaretToLineWithStartOfLineOption(editor, line, caret)
+    // The command's range is one-based, but zero is a valid address
+    val line1 = min(getLineRange(editor, caret).endLine1, editor.lineCount())
+    if (line1 >= 0) {
+      val offset = injector.motion.moveCaretToLineWithStartOfLineOption(editor, (line1 - 1).coerceAtLeast(0), caret)
       caret.moveToOffset(offset)
       return ExecutionResult.Success
     }

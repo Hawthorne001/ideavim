@@ -7,37 +7,21 @@
  */
 package com.maddyhome.idea.vim.impl.state
 
-import com.maddyhome.idea.vim.KeyHandler
-import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.command.Command
-import com.maddyhome.idea.vim.command.CommandBuilder
 import com.maddyhome.idea.vim.command.CommandFlags
 import com.maddyhome.idea.vim.command.MappingMode
-import com.maddyhome.idea.vim.command.MappingState
-import com.maddyhome.idea.vim.common.DigraphResult
-import com.maddyhome.idea.vim.common.DigraphSequence
 import com.maddyhome.idea.vim.helper.noneOfEnum
-import com.maddyhome.idea.vim.state.KeyHandlerState
 import com.maddyhome.idea.vim.state.VimStateMachine
 import com.maddyhome.idea.vim.state.mode.Mode
 import org.jetbrains.annotations.Contract
 import java.util.*
-import javax.swing.KeyStroke
 
 /**
  * Used to maintain state before and while entering a Vim command (operator, motion, text object, etc.)
  */
-public class VimStateMachineImpl : VimStateMachine {
-  @Deprecated("Please use KeyHandlerState instead")
-  override val commandBuilder: CommandBuilder = KeyHandler.getInstance().keyHandlerState.commandBuilder
-  @Deprecated("Please use KeyHandlerState instead")
-  override val mappingState: MappingState = KeyHandler.getInstance().keyHandlerState.mappingState
-  @Deprecated("Please use KeyHandlerState instead")
-  override val digraphSequence: DigraphSequence = KeyHandler.getInstance().keyHandlerState.digraphSequence
-
+class VimStateMachineImpl : VimStateMachine {
   override var mode: Mode = Mode.NORMAL()
   override var isDotRepeatInProgress: Boolean = false
-  override var isRegisterPending: Boolean = false
   override var isReplaceCharacter: Boolean = false
 
   /**
@@ -52,61 +36,20 @@ public class VimStateMachineImpl : VimStateMachine {
    */
   override var executingCommand: Command? = null
 
-  override fun isOperatorPending(mode: Mode): Boolean {
-    val keyHandler = KeyHandler.getInstance()
-    return keyHandler.isOperatorPending(mode, keyHandler.keyHandlerState)
-  }
-
-  override fun isDuplicateOperatorKeyStroke(key: KeyStroke, mode: Mode): Boolean {
-    val keyHandler = KeyHandler.getInstance()
-    return keyHandler.isDuplicateOperatorKeyStroke(key, mode, keyHandler.keyHandlerState)
-  }
-
   override val executingCommandFlags: EnumSet<CommandFlags>
     get() = executingCommand?.flags ?: noneOfEnum()
 
 
-  override fun resetRegisterPending() {
-    if (isRegisterPending) {
-      isRegisterPending = false
-    }
+  override fun reset() {
+    mode = Mode.NORMAL()
+    isDotRepeatInProgress = false
+    isReplaceCharacter = false
+    executingCommand = null
   }
 
-  override fun startDigraphSequence() {
-    val keyHandler = KeyHandler.getInstance()
-    keyHandler.keyHandlerState.digraphSequence.startDigraphSequence()
-  }
-
-  override fun startLiteralSequence() {
-    val keyHandler = KeyHandler.getInstance()
-    keyHandler.keyHandlerState.digraphSequence.startLiteralSequence()
-  }
-
-  override fun processDigraphKey(key: KeyStroke, editor: VimEditor): DigraphResult {
-    val keyHandler = KeyHandler.getInstance()
-    return keyHandler.keyHandlerState.digraphSequence.processKey(key, editor)
-  }
-
-  /**
-   * Toggles the insert/overwrite state. If currently insert, goto replace mode. If currently replace, goto insert
-   * mode.
-   */
-  override fun toggleInsertOverwrite() {
-    val oldMode = this.mode
-    var newMode = oldMode
-    if (oldMode == Mode.INSERT) {
-      newMode = Mode.REPLACE
-    } else if (oldMode == Mode.REPLACE) {
-      newMode = Mode.INSERT
-    }
-    if (oldMode != newMode) {
-      mode = newMode
-    }
-  }
-
-  public companion object {
+  companion object {
     @Contract(pure = true)
-    public fun modeToMappingMode(mode: Mode): MappingMode {
+    fun modeToMappingMode(mode: Mode): MappingMode {
       return when (mode) {
         is Mode.NORMAL -> MappingMode.NORMAL
         Mode.INSERT, Mode.REPLACE -> MappingMode.INSERT
@@ -119,7 +62,7 @@ public class VimStateMachineImpl : VimStateMachine {
   }
 }
 
-public fun Mode.toMappingMode(): MappingMode {
+fun Mode.toMappingMode(): MappingMode {
   return when (this) {
     is Mode.NORMAL -> MappingMode.NORMAL
     Mode.INSERT, Mode.REPLACE -> MappingMode.INSERT

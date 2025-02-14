@@ -10,6 +10,7 @@ package com.maddyhome.idea.vim;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
@@ -24,10 +25,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.SystemInfo;
-import com.maddyhome.idea.vim.api.VimEditor;
-import com.maddyhome.idea.vim.api.VimInjectorKt;
-import com.maddyhome.idea.vim.api.VimKeyGroup;
-import com.maddyhome.idea.vim.api.VimOptionGroup;
+import com.intellij.util.SlowOperations;
+import com.maddyhome.idea.vim.api.*;
 import com.maddyhome.idea.vim.config.VimState;
 import com.maddyhome.idea.vim.config.migration.ApplicationConfigurationMigrator;
 import com.maddyhome.idea.vim.extension.VimExtensionRegistrar;
@@ -36,9 +35,9 @@ import com.maddyhome.idea.vim.group.copy.PutGroup;
 import com.maddyhome.idea.vim.group.visual.VisualMotionGroup;
 import com.maddyhome.idea.vim.helper.MacKeyRepeat;
 import com.maddyhome.idea.vim.listener.VimListenerManager;
-import com.maddyhome.idea.vim.newapi.IjVimInjector;
+import com.maddyhome.idea.vim.newapi.IjVimInjectorKt;
+import com.maddyhome.idea.vim.newapi.IjVimSearchGroup;
 import com.maddyhome.idea.vim.ui.StatusBarIconFactory;
-import com.maddyhome.idea.vim.ui.ex.ExEntryPanel;
 import com.maddyhome.idea.vim.vimscript.services.VariableService;
 import com.maddyhome.idea.vim.yank.YankGroupBase;
 import org.jdom.Element;
@@ -46,6 +45,7 @@ import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import static com.maddyhome.idea.vim.api.VimInjectorKt.injector;
 import static com.maddyhome.idea.vim.group.EditorGroup.EDITOR_STORE_ELEMENT;
 import static com.maddyhome.idea.vim.group.KeyGroup.SHORTCUT_CONFLICTS_ELEMENT;
 import static com.maddyhome.idea.vim.vimscript.services.VimRcService.executeIdeaVimRc;
@@ -66,7 +66,7 @@ public class VimPlugin implements PersistentStateComponent<Element>, Disposable 
   private static final Logger LOG = Logger.getInstance(VimPlugin.class);
 
   static {
-    VimInjectorKt.setInjector(new IjVimInjector());
+    IjVimInjectorKt.initInjector();
   }
 
   private final @NotNull VimState state = new VimState();
@@ -123,12 +123,12 @@ public class VimPlugin implements PersistentStateComponent<Element>, Disposable 
     return (FileGroup)VimInjectorKt.getInjector().getFile();
   }
 
-  public static @NotNull SearchGroup getSearch() {
-    return ApplicationManager.getApplication().getService(SearchGroup.class);
+  public static @NotNull IjVimSearchGroup getSearch() {
+    return ApplicationManager.getApplication().getService(IjVimSearchGroup.class);
   }
 
-  public static @Nullable SearchGroup getSearchIfCreated() {
-    return ApplicationManager.getApplication().getServiceIfCreated(SearchGroup.class);
+  public static @Nullable IjVimSearchGroup getSearchIfCreated() {
+    return ApplicationManager.getApplication().getServiceIfCreated(IjVimSearchGroup.class);
   }
 
   public static @NotNull ProcessGroup getProcess() {
@@ -139,8 +139,8 @@ public class VimPlugin implements PersistentStateComponent<Element>, Disposable 
     return (MacroGroup)VimInjectorKt.getInjector().getMacro();
   }
 
-  public static @NotNull DigraphGroup getDigraph() {
-    return (DigraphGroup)VimInjectorKt.getInjector().getDigraphGroup();
+  public static @NotNull VimDigraphGroup getDigraph() {
+    return VimInjectorKt.getInjector().getDigraphGroup();
   }
 
   public static @NotNull HistoryGroup getHistory() {
@@ -215,7 +215,8 @@ public class VimPlugin implements PersistentStateComponent<Element>, Disposable 
 
     if (enabled) {
       VimInjectorKt.getInjector().getListenersNotifier().notifyPluginTurnedOn();
-    } else {
+    }
+    else {
       VimInjectorKt.getInjector().getListenersNotifier().notifyPluginTurnedOff();
     }
 
@@ -282,7 +283,13 @@ public class VimPlugin implements PersistentStateComponent<Element>, Disposable 
     ideavimrcRegistered = true;
 
     if (!ApplicationManager.getApplication().isUnitTestMode()) {
-      executeIdeaVimRc(editor);
+      try {
+        injector.getOptionGroup().startInitVimRc();
+        executeIdeaVimRc(editor);
+      }
+      finally {
+        injector.getOptionGroup().endInitVimRc();
+      }
     }
   }
 
@@ -331,7 +338,9 @@ public class VimPlugin implements PersistentStateComponent<Element>, Disposable 
 
     // 4) ~/.ideavimrc execution
     // Evaluate in the context of the fallback window, to capture local option state, to copy to the first editor window
-    registerIdeavimrc(VimInjectorKt.getInjector().getFallbackWindow());
+    try (AccessToken ignore = SlowOperations.knownIssue("VIM-3661")) {
+      registerIdeavimrc(VimInjectorKt.getInjector().getFallbackWindow());
+    }
 
     // Turing on should be performed after all commands registration
     getSearch().turnOn();
@@ -339,14 +348,14 @@ public class VimPlugin implements PersistentStateComponent<Element>, Disposable 
   }
 
   private void turnOffPlugin(boolean unsubscribe) {
-    SearchGroup searchGroup = getSearchIfCreated();
+    IjVimSearchGroup searchGroup = getSearchIfCreated();
     if (searchGroup != null) {
       searchGroup.turnOff();
     }
     if (unsubscribe) {
       VimListenerManager.INSTANCE.turnOff();
     }
-    ExEntryPanel.fullReset();
+    injector.getCommandLine().fullReset();
 
     // Unregister vim actions in command mode
     RegisterActions.unregisterActions();

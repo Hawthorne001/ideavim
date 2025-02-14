@@ -9,11 +9,14 @@
 package com.maddyhome.idea.vim.extension.textobjentire;
 
 import com.intellij.openapi.editor.Caret;
+import com.maddyhome.idea.vim.KeyHandler;
 import com.maddyhome.idea.vim.api.ExecutionContext;
 import com.maddyhome.idea.vim.api.ImmutableVimCaret;
 import com.maddyhome.idea.vim.api.VimEditor;
 import com.maddyhome.idea.vim.api.VimInjectorKt;
-import com.maddyhome.idea.vim.command.*;
+import com.maddyhome.idea.vim.command.MappingMode;
+import com.maddyhome.idea.vim.command.OperatorArguments;
+import com.maddyhome.idea.vim.command.TextObjectVisualType;
 import com.maddyhome.idea.vim.common.TextRange;
 import com.maddyhome.idea.vim.extension.ExtensionHandler;
 import com.maddyhome.idea.vim.extension.VimExtension;
@@ -23,19 +26,17 @@ import com.maddyhome.idea.vim.listener.SelectionVimListenerSuppressor;
 import com.maddyhome.idea.vim.listener.VimListenerSuppressor;
 import com.maddyhome.idea.vim.newapi.IjVimCaret;
 import com.maddyhome.idea.vim.newapi.IjVimEditor;
-import com.maddyhome.idea.vim.state.VimStateMachine;
+import com.maddyhome.idea.vim.state.KeyHandlerState;
 import com.maddyhome.idea.vim.state.mode.Mode;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import java.util.EnumSet;
 
 import static com.maddyhome.idea.vim.extension.VimExtensionFacade.putExtensionHandlerMapping;
 import static com.maddyhome.idea.vim.extension.VimExtensionFacade.putKeyMappingIfMissing;
 
 /**
  * Port of vim-entire:
- * https://github.com/kana/vim-textobj-entire
+ * <a href="https://github.com/kana/vim-textobj-entire">vim-textobj-entire</a>
  *
  * <p>
  * vim-textobj-entire provides two text objects:
@@ -50,7 +51,7 @@ import static com.maddyhome.idea.vim.extension.VimExtensionFacade.putKeyMappingI
  * </ul>
  *
  * See also the reference manual for more details at:
- * https://github.com/kana/vim-textobj-entire/blob/master/doc/textobj-entire.txt
+ * <a href="https://github.com/kana/vim-textobj-entire/blob/master/doc/textobj-entire.txt">text-obj-entire.txt</a>
  *
  * @author Alexandre Grison (@agrison)
  */
@@ -93,13 +94,12 @@ public class VimTextObjEntireExtension implements VimExtension {
         this.ignoreLeadingAndTrailing = ignoreLeadingAndTrailing;
       }
 
-      @Nullable
       @Override
-      public TextRange getRange(@NotNull VimEditor editor,
-                                @NotNull ImmutableVimCaret caret,
-                                @NotNull ExecutionContext context,
-                                int count,
-                                int rawCount) {
+      public @Nullable TextRange getRange(@NotNull VimEditor editor,
+                                          @NotNull ImmutableVimCaret caret,
+                                          @NotNull ExecutionContext context,
+                                          int count,
+                                          int rawCount) {
         int start = 0, end = ((IjVimEditor)editor).getEditor().getDocument().getTextLength();
 
         // for the `ie` text object we don't want leading an trailing spaces
@@ -124,26 +124,25 @@ public class VimTextObjEntireExtension implements VimExtension {
         return new TextRange(start, end);
       }
 
-      @NotNull
       @Override
-      public TextObjectVisualType getVisualType() {
+      public @NotNull TextObjectVisualType getVisualType() {
         return TextObjectVisualType.CHARACTER_WISE;
       }
     }
 
     @Override
     public void execute(@NotNull VimEditor editor, @NotNull ExecutionContext context, @NotNull OperatorArguments operatorArguments) {
-      @NotNull VimStateMachine vimStateMachine = VimStateMachine.Companion.getInstance(editor);
-      int count = Math.max(1, vimStateMachine.getCommandBuilder().getCount());
+      @NotNull KeyHandlerState keyHandlerState = KeyHandler.getInstance().getKeyHandlerState();
 
       final EntireTextObjectHandler textObjectHandler = new EntireTextObjectHandler(ignoreLeadingAndTrailing);
       //noinspection DuplicatedCode
-      if (!vimStateMachine.isOperatorPending(editor.getMode())) {
+      if (!(editor.getMode() instanceof Mode.OP_PENDING)) {
+        int count0 = operatorArguments.getCount0();
         ((IjVimEditor) editor).getEditor().getCaretModel().runForEachCaret((Caret caret) -> {
-          final TextRange range = textObjectHandler.getRange(editor, new IjVimCaret(caret), context, count, 0);
+          final TextRange range = textObjectHandler.getRange(editor, new IjVimCaret(caret), context, Math.max(1, count0), count0);
           if (range != null) {
             try (VimListenerSuppressor.Locked ignored = SelectionVimListenerSuppressor.INSTANCE.lock()) {
-              if (vimStateMachine.getMode() instanceof Mode.VISUAL) {
+              if (editor.getMode() instanceof Mode.VISUAL) {
                 com.maddyhome.idea.vim.group.visual.EngineVisualGroupKt.vimSetSelection(new IjVimCaret(caret), range.getStartOffset(), range.getEndOffset() - 1, true);
               } else {
                 InlayHelperKt.moveToInlayAwareOffset(caret, range.getStartOffset());
@@ -153,9 +152,7 @@ public class VimTextObjEntireExtension implements VimExtension {
 
         });
       } else {
-        vimStateMachine.getCommandBuilder().completeCommandPart(new Argument(new Command(count,
-                                                                                         textObjectHandler, Command.Type.MOTION,
-                                                                                         EnumSet.noneOf(CommandFlags.class))));
+        keyHandlerState.getCommandBuilder().addAction(textObjectHandler);
       }
     }
   }

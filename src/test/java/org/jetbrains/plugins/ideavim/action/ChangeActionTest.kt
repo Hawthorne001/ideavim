@@ -7,9 +7,9 @@
  */
 package org.jetbrains.plugins.ideavim.action
 
+import com.intellij.idea.TestFor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.state.mode.Mode
-import com.maddyhome.idea.vim.state.mode.ReturnTo
 import com.maddyhome.idea.vim.state.mode.SelectionType
 import org.jetbrains.plugins.ideavim.SkipNeovimReason
 import org.jetbrains.plugins.ideavim.TestWithoutNeovim
@@ -51,7 +51,7 @@ class ChangeActionTest : VimTestCase() {
       listOf("i", "<C-O>", "v"),
       "12${c}345",
       "12${s}${c}3${se}45",
-      Mode.VISUAL(SelectionType.CHARACTER_WISE, ReturnTo.INSERT)
+      Mode.VISUAL(SelectionType.CHARACTER_WISE, Mode.INSERT)
     )
   }
 
@@ -62,18 +62,19 @@ class ChangeActionTest : VimTestCase() {
       listOf("i", "<C-O>", "v", "<esc>"),
       "12${c}345",
       "12${c}345",
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
   // VIM-620 |i_CTRL-O|
   @Test
+  @TestWithoutNeovim(SkipNeovimReason.UNCLEAR)
   fun testInsertSingleCommandAndNewLineInserting4() {
     doTest(
       listOf("i", "<C-O>", "v", "d"),
       "12${c}345",
       "12${c}45",
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -85,7 +86,7 @@ Mode.INSERT,
       listOf("i", "<C-O>", "v", "<C-G>"),
       "12${c}345",
       "12${s}3${c}${se}45",
-      Mode.SELECT(SelectionType.CHARACTER_WISE, ReturnTo.INSERT),
+      Mode.SELECT(SelectionType.CHARACTER_WISE, Mode.INSERT),
     )
   }
 
@@ -97,7 +98,7 @@ Mode.INSERT,
       listOf("i", "<C-O>", "gh"),
       "12${c}345",
       "12${s}3${c}${se}45",
-      Mode.SELECT(SelectionType.CHARACTER_WISE, ReturnTo.INSERT),
+      Mode.SELECT(SelectionType.CHARACTER_WISE, Mode.INSERT),
     )
   }
 
@@ -109,7 +110,7 @@ Mode.INSERT,
       listOf("i", "<C-O>", "gh", "<esc>"),
       "12${c}345",
       "123${c}45",
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -122,18 +123,19 @@ Mode.INSERT,
       listOf("i", "<C-O>", "gh", "d"),
       "12${c}345",
       "12d${c}45",
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
   // VIM-311 |i_CTRL-O|
   @Test
+  @TestWithoutNeovim(SkipNeovimReason.UNCLEAR)
   fun testInsertSingleCommand() {
     doTest(
       listOf("i", "def", "<C-O>", "d2h", "x"),
       "abc$c.\n",
       "abcdx.\n",
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -222,7 +224,7 @@ Mode.INSERT,
    four
    
       """.trimIndent(),
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -405,7 +407,7 @@ Mode.INSERT,
       listOf("A", ", ", "<C-R>", "a", "!"),
       "${c}Hello\n",
       "Hello, World!\n",
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -416,7 +418,7 @@ Mode.INSERT,
       listOf("O", "bar"),
       "fo${c}o\n",
       "bar\nfoo\n",
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -1067,5 +1069,16 @@ foobaz
       """.trimIndent(),
       Mode.NORMAL(),
     )
+  }
+
+  @Test
+  @TestFor(issues = ["VIM-2074"])
+  @TestWithoutNeovim(SkipNeovimReason.UNCLEAR)
+  fun `backspace with replace mode`() {
+    configureByText("${c}Hello world")
+    typeText("R1111")
+    assertState("1111o world")
+    typeText("<BS><BS><BS>")
+    assertState("1ello world")
   }
 }

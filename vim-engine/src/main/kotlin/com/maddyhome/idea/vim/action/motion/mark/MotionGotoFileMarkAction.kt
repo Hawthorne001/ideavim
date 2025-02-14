@@ -23,7 +23,7 @@ import com.maddyhome.idea.vim.handler.MotionActionHandler
 import java.util.*
 
 @CommandOrMotion(keys = ["`"], modes = [Mode.VISUAL, Mode.OP_PENDING])
-public class MotionGotoFileMarkAction : MotionActionHandler.ForEachCaret() {
+class MotionGotoFileMarkAction : MotionActionHandler.ForEachCaret() {
   override val motionType: MotionType = MotionType.EXCLUSIVE
 
   override val argumentType: Argument.Type = Argument.Type.CHARACTER
@@ -37,7 +37,7 @@ public class MotionGotoFileMarkAction : MotionActionHandler.ForEachCaret() {
     argument: Argument?,
     operatorArguments: OperatorArguments,
   ): Motion {
-    if (argument == null) return Motion.Error
+    if (argument !is Argument.Character) return Motion.Error
 
     val mark = argument.character
     return injector.motion.moveCaretToMark(caret, mark, false)
@@ -45,7 +45,7 @@ public class MotionGotoFileMarkAction : MotionActionHandler.ForEachCaret() {
 }
 
 @CommandOrMotion(keys = ["g`"], modes = [Mode.VISUAL, Mode.OP_PENDING])
-public class MotionGotoFileMarkNoSaveJumpAction : MotionActionHandler.ForEachCaret() {
+class MotionGotoFileMarkNoSaveJumpAction : MotionActionHandler.ForEachCaret() {
   override val motionType: MotionType = MotionType.EXCLUSIVE
 
   override val argumentType: Argument.Type = Argument.Type.CHARACTER
@@ -57,7 +57,7 @@ public class MotionGotoFileMarkNoSaveJumpAction : MotionActionHandler.ForEachCar
     argument: Argument?,
     operatorArguments: OperatorArguments,
   ): Motion {
-    if (argument == null) return Motion.Error
+    if (argument !is Argument.Character) return Motion.Error
 
     val mark = argument.character
     return injector.motion.moveCaretToMark(caret, mark, false)

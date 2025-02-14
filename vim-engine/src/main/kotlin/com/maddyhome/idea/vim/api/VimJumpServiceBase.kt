@@ -10,7 +10,7 @@ package com.maddyhome.idea.vim.api
 
 import com.maddyhome.idea.vim.mark.Jump
 
-public abstract class VimJumpServiceBase : VimJumpService {
+abstract class VimJumpServiceBase : VimJumpService {
   protected val projectToJumps: MutableMap<String, MutableList<Jump>> = mutableMapOf()
   protected val projectToJumpSpot: MutableMap<String, Int> = mutableMapOf()
 
@@ -18,8 +18,8 @@ public abstract class VimJumpServiceBase : VimJumpService {
     val jumps = projectToJumps[projectId] ?: mutableListOf()
     projectToJumpSpot.putIfAbsent(projectId, -1)
     val index = jumps.size - 1 - (projectToJumpSpot[projectId]!! - count)
-    return jumps.getOrNull(index)?.also { 
-      projectToJumpSpot[projectId] = projectToJumpSpot[projectId]!! - count 
+    return jumps.getOrNull(index)?.also {
+      projectToJumpSpot[projectId] = projectToJumpSpot[projectId]!! - count
     }
   }
 
@@ -58,6 +58,11 @@ public abstract class VimJumpServiceBase : VimJumpService {
     projectToJumps[projectId]?.removeLastOrNull()
   }
 
+  override fun clearJumps(projectId: String) {
+    projectToJumps.remove(projectId)
+    projectToJumpSpot.remove(projectId)
+  }
+
   override fun updateJumpsFromInsert(projectId: String, startOffset: Int, length: Int) {
     TODO("Not yet implemented")
   }
@@ -71,7 +76,7 @@ public abstract class VimJumpServiceBase : VimJumpService {
     projectToJumpSpot.clear()
   }
 
-  public companion object {
-    public const val SAVE_JUMP_COUNT: Int = 100
+  companion object {
+    const val SAVE_JUMP_COUNT: Int = 100
   }
 }

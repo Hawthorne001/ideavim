@@ -13,7 +13,6 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.KeyboardShortcut
 import com.intellij.openapi.project.DumbAwareAction
 import com.maddyhome.idea.vim.KeyHandler
-import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.newapi.vim
 import java.awt.event.KeyEvent
 import javax.swing.KeyStroke
@@ -30,6 +29,7 @@ import javax.swing.KeyStroke
  * component has focus. It registers all shortcuts used by the Swing actions and forwards them directly to the key
  * handler.
  */
+@Deprecated("ExCommands should be migrated to KeyHandler like commands for other modes")
 internal class ExShortcutKeyAction(private val exEntryPanel: ExEntryPanel) : DumbAwareAction() {
 
   override fun actionPerformed(e: AnActionEvent) {
@@ -37,12 +37,12 @@ internal class ExShortcutKeyAction(private val exEntryPanel: ExEntryPanel) : Dum
     if (keyStroke != null) {
       val editor = exEntryPanel.entry.editor
       val keyHandler = KeyHandler.getInstance()
-      keyHandler.handleKey(
-        editor.vim,
-        keyStroke,
-        injector.executionContextManager.onEditor(editor.vim, e.dataContext.vim),
-        keyHandler.keyHandlerState
-      )
+
+      // About the context: we use the context of the main editor to execute actions on it.
+      //   e.dataContext will refer to the ex-entry editor and commands will be executed on it,
+      //   thus it should not be used. For example, `:action EditorSelectWord` will not work with this context
+      val mainEditorContext = exEntryPanel.entry.context.vim
+      keyHandler.handleKey(editor!!.vim, keyStroke, mainEditorContext, keyHandler.keyHandlerState)
     }
   }
 
@@ -59,9 +59,45 @@ internal class ExShortcutKeyAction(private val exEntryPanel: ExEntryPanel) : Dum
   }
 
   fun registerCustomShortcutSet() {
-    val shortcuts = ExKeyBindings.bindings.map {
-      KeyboardShortcut(it.key, null)
-    }.toTypedArray()
+    val shortcuts = listOf(
+      KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_OPEN_BRACKET, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_C, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_J, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_M, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_B, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_HOME, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_E, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_END, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_H, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_W, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_U, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_UP, KeyEvent.SHIFT_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_P, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, KeyEvent.SHIFT_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_N, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_INSERT, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, KeyEvent.SHIFT_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0),
+      KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, KeyEvent.SHIFT_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_K, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_V, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_Q, KeyEvent.CTRL_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_V, KeyEvent.META_DOWN_MASK),
+      KeyStroke.getKeyStroke(KeyEvent.VK_INSERT, KeyEvent.SHIFT_DOWN_MASK),
+    )
+      .map { KeyboardShortcut(it, null) }
+      .toTypedArray()
 
     registerCustomShortcutSet({ shortcuts }, exEntryPanel)
   }

@@ -8,6 +8,7 @@
 
 package com.maddyhome.idea.vim.group.visual
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.trace
 import com.intellij.openapi.editor.Editor
@@ -15,6 +16,8 @@ import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.api.options
+import com.maddyhome.idea.vim.group.visual.IdeaSelectionControl.controlNonVimSelectionChange
+import com.maddyhome.idea.vim.group.visual.IdeaSelectionControl.predictMode
 import com.maddyhome.idea.vim.helper.exitSelectMode
 import com.maddyhome.idea.vim.helper.exitVisualMode
 import com.maddyhome.idea.vim.helper.hasVisualSelection
@@ -26,6 +29,7 @@ import com.maddyhome.idea.vim.listener.VimListenerManager
 import com.maddyhome.idea.vim.newapi.vim
 import com.maddyhome.idea.vim.options.OptionConstants
 import com.maddyhome.idea.vim.state.mode.Mode
+import com.maddyhome.idea.vim.state.mode.inCommandLineMode
 import com.maddyhome.idea.vim.state.mode.inNormalMode
 import com.maddyhome.idea.vim.state.mode.inSelectMode
 import com.maddyhome.idea.vim.state.mode.inVisualMode
@@ -61,12 +65,20 @@ internal object IdeaSelectionControl {
       //  - There was no selection and now it is
       //  - There was a selection and now it doesn't exist
       //  - There was a selection and now it exists as well (transforming char selection to line selection, for example)
-      if (initialMode?.hasVisualSelection == false && !editor.selectionModel.hasSelection(true)) {
+      val hasSelection = ApplicationManager.getApplication().runReadAction<Boolean> {
+        editor.selectionModel.hasSelection(true)
+      }
+      if (initialMode?.hasVisualSelection == false && !hasSelection) {
         logger.trace { "Exiting without selection adjusting" }
         return@singleTask
       }
 
-      if (editor.selectionModel.hasSelection(true)) {
+      if (hasSelection) {
+        if (editor.vim.inCommandLineMode && editor.vim.mode.returnTo.hasVisualSelection) {
+          logger.trace { "Modifying selection while in Command-line mode, most likely incsearch" }
+          return@singleTask
+        }
+
         if (dontChangeMode(editor)) {
           IdeaRefactorModeHelper.correctSelection(editor)
           logger.trace { "Selection corrected for refactoring" }
@@ -117,7 +129,7 @@ internal object IdeaSelectionControl {
       is Mode.VISUAL -> VimPlugin.getVisualMotion().enterVisualMode(editor.vim, mode.selectionType)
       is Mode.SELECT -> VimPlugin.getVisualMotion().enterSelectMode(editor.vim, mode.selectionType)
       is Mode.INSERT -> VimPlugin.getChange()
-        .insertBeforeCursor(editor.vim, injector.executionContextManager.onEditor(editor.vim))
+        .insertBeforeCursor(editor.vim, injector.executionContextManager.getEditorExecutionContext(editor.vim))
 
       is Mode.NORMAL -> Unit
       else -> error("Unexpected mode: $mode")
@@ -145,23 +157,27 @@ internal object IdeaSelectionControl {
     return when {
       editor.isOneLineMode -> {
         if (logReason) logger.debug("Enter select mode. Reason: one line mode")
-        Mode.SELECT(VimPlugin.getVisualMotion().autodetectVisualSubmode(editor.vim))
+        Mode.SELECT(VimPlugin.getVisualMotion().detectSelectionType(editor.vim))
       }
+
       selectionSource == VimListenerManager.SelectionSource.MOUSE && OptionConstants.selectmode_mouse in selectmode -> {
         if (logReason) logger.debug("Enter select mode. Selection source is mouse and selectMode option has mouse")
-        Mode.SELECT(VimPlugin.getVisualMotion().autodetectVisualSubmode(editor.vim))
+        Mode.SELECT(VimPlugin.getVisualMotion().detectSelectionType(editor.vim))
       }
+
       editor.isTemplateActive() && editor.vim.isIdeaRefactorModeSelect -> {
         if (logReason) logger.debug("Enter select mode. Template is active and selectMode has template")
-        Mode.SELECT(VimPlugin.getVisualMotion().autodetectVisualSubmode(editor.vim))
+        Mode.SELECT(VimPlugin.getVisualMotion().detectSelectionType(editor.vim))
       }
+
       selectionSource == VimListenerManager.SelectionSource.OTHER && OptionConstants.selectmode_ideaselection in selectmode -> {
         if (logReason) logger.debug("Enter select mode. Selection source is OTHER and selectMode has refactoring")
-        Mode.SELECT(VimPlugin.getVisualMotion().autodetectVisualSubmode(editor.vim))
+        Mode.SELECT(VimPlugin.getVisualMotion().detectSelectionType(editor.vim))
       }
+
       else -> {
         if (logReason) logger.debug("Enter visual mode")
-        Mode.VISUAL(VimPlugin.getVisualMotion().autodetectVisualSubmode(editor.vim))
+        Mode.VISUAL(VimPlugin.getVisualMotion().detectSelectionType(editor.vim))
       }
     }
   }

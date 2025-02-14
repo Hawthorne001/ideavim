@@ -129,8 +129,26 @@ Original plugin: [vim-multiple-cursors](https://github.com/terryma/vim-multiple-
       </details>
    
 ### Instructions
-   
-https://github.com/terryma/vim-multiple-cursors/blob/master/doc/multiple_cursors.txt
+
+At the moment, the default key binds for this plugin do not get mapped correctly in IdeaVim (see [VIM-2178](https://youtrack.jetbrains.com/issue/VIM-2178)). To enable the default key binds, add the following to your `.ideavimrc` file...
+
+```
+" Remap multiple-cursors shortcuts to match terryma/vim-multiple-cursors
+nmap <C-n> <Plug>NextWholeOccurrence
+xmap <C-n> <Plug>NextWholeOccurrence
+nmap g<C-n> <Plug>NextOccurrence
+xmap g<C-n> <Plug>NextOccurrence
+xmap <C-x> <Plug>SkipOccurrence
+xmap <C-p> <Plug>RemoveOccurrence
+
+" Note that the default <A-n> and g<A-n> shortcuts don't work on Mac due to dead keys.
+" <A-n> is used to enter accented text e.g. ñ
+" Feel free to pick your own mappings that are not affected. I like to use <leader>
+nmap <leader><C-n> <Plug>AllWholeOccurrences
+xmap <leader><C-n> <Plug>AllWholeOccurrences
+nmap <leader>g<C-n> <Plug>AllOccurrences
+xmap <leader>g<C-n> <Plug>AllOccurrences
+```
 
 </details>
 
@@ -303,7 +321,10 @@ If you want to optimize highlight duration, assign a time in milliseconds:
    
 If you want to change background color of highlight you can provide the rgba of the color you want e.g.  
       `let g:highlightedyank_highlight_color = "rgba(160, 160, 160, 155)"`
-   
+
+If you want to change text color of highlight you can provide the rgba of the color you want e.g.  
+`let g:highlightedyank_highlight_foreground_color = "rgba(0, 0, 0, 255)"`
+
 https://github.com/machakann/vim-highlightedyank/blob/master/doc/highlightedyank.txt
 
 </details>
@@ -402,6 +423,24 @@ https://plugins.jetbrains.com/plugin/19417-ideavim-quickscope
 
 </details>
 
+<details>
+<summary><h2>Mini.ai: Extend and create a/i textobjects (IMPORTANT: The plugin is not related with artificial intelligence)</h2></summary>
+
+### Features: 
+Provides additional text object motions for handling quotes and brackets. The following motions are included:
+
+- aq: Around any quotes.
+- iq: Inside any quotes.
+- ab: Around any parentheses, curly braces, and square brackets.
+- ib: Inside any parentheses, curly braces, and square brackets.
+
+Original plugin: [mini.ai](https://github.com/echasnovski/mini.ai).
+
+### Setup:
+- Add the following command to `~/.ideavimrc`: `set mini-ai`
+
+</details>
+
 
 <details>
 <summary><h2>Which-Key</h2></summary>
@@ -417,3 +456,49 @@ Original plugin: [vim-which-key](https://github.com/liuchengxu/vim-which-key).
 https://github.com/TheBlob42/idea-which-key?tab=readme-ov-file#installation
 
 </details>
+<details>
+<summary><h2>Vim Peekaboo</h2></summary>
+
+By Julien Phalip  
+Original plugin: [vim-peekaboo](https://github.com/junegunn/vim-peekaboo).
+
+### Setup
+
+Add `set peekaboo` to your `~/.ideavimrc` file, then run `:source ~/.ideavimrc`
+or restart the IDE.
+
+### Instructions
+
+https://plugins.jetbrains.com/plugin/25776-vim-peekaboo
+</details>
+
+<details>
+<summary><h2>FunctionTextObj</h2></summary>
+
+By Julien Phalip  
+
+### Setup
+
+Add `set functiontextobj` to your `~/.ideavimrc` file, then run `:source ~/.ideavimrc`
+or restart the IDE.
+
+### Instructions
+
+https://plugins.jetbrains.com/plugin/25897-vim-functiontextobj
+</details>
+
+<details>
+<summary><h2>Switch</h2></summary>
+
+By Julien Phalip  
+Original plugin: [switch.vim](https://github.com/AndrewRadev/switch.vim).
+
+### Setup
+
+Add `set switch` to your `~/.ideavimrc` file, then run `:source ~/.ideavimrc`
+or restart the IDE.
+
+### Instructions
+
+https://plugins.jetbrains.com/plugin/25899-vim-switch
+

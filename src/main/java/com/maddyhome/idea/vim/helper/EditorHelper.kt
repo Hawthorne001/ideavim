@@ -19,13 +19,14 @@ import com.intellij.util.ui.table.JBTableRowEditor
 import com.maddyhome.idea.vim.api.StringListOptionValue
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.group.IjOptionConstants
+import com.maddyhome.idea.vim.key.IdeaVimDisablerExtensionPoint
 import com.maddyhome.idea.vim.newapi.globalIjOptions
 import java.awt.Component
 import javax.swing.JComponent
 import javax.swing.JTable
 
 @Deprecated("Use fileSize from VimEditor")
-public val Editor.fileSize: Int
+val Editor.fileSize: Int
   get() = document.textLength
 
 /**
@@ -37,7 +38,8 @@ internal val Editor.isIdeaVimDisabledHere: Boolean
     val ideaVimSupportValue = injector.globalIjOptions().ideavimsupport
     return (ideaVimDisabledInDialog(ideaVimSupportValue) && isInDialog()) ||
       !ClientId.isCurrentlyUnderLocalId || // CWM-927
-      (ideaVimDisabledForSingleLine(ideaVimSupportValue) && isSingleLine())
+      (ideaVimDisabledForSingleLine(ideaVimSupportValue) && isSingleLine()) ||
+      IdeaVimDisablerExtensionPoint.isDisabledForEditor(this)
   }
 
 private fun ideaVimDisabledInDialog(ideaVimSupportValue: StringListOptionValue): Boolean {

@@ -26,6 +26,7 @@ import com.maddyhome.idea.vim.api.VimMotionGroupBase
 import com.maddyhome.idea.vim.api.anyNonWhitespace
 import com.maddyhome.idea.vim.api.getLeadingCharacterOffset
 import com.maddyhome.idea.vim.api.getVisualLineCount
+import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.api.lineLength
 import com.maddyhome.idea.vim.api.normalizeVisualColumn
 import com.maddyhome.idea.vim.api.normalizeVisualLine
@@ -34,7 +35,7 @@ import com.maddyhome.idea.vim.command.Argument
 import com.maddyhome.idea.vim.command.MotionType
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.common.TextRange
-import com.maddyhome.idea.vim.ex.ExOutputModel
+import com.maddyhome.idea.vim.handler.ExternalActionHandler
 import com.maddyhome.idea.vim.handler.Motion
 import com.maddyhome.idea.vim.handler.Motion.AbsoluteOffset
 import com.maddyhome.idea.vim.handler.MotionActionHandler
@@ -46,13 +47,12 @@ import com.maddyhome.idea.vim.helper.getNormalizedScrollOffset
 import com.maddyhome.idea.vim.helper.getNormalizedSideScrollOffset
 import com.maddyhome.idea.vim.helper.isEndAllowed
 import com.maddyhome.idea.vim.helper.vimLastColumn
+import com.maddyhome.idea.vim.impl.state.VimStateMachineImpl
 import com.maddyhome.idea.vim.listener.AppCodeTemplates
 import com.maddyhome.idea.vim.newapi.IjEditorExecutionContext
 import com.maddyhome.idea.vim.newapi.ij
 import com.maddyhome.idea.vim.newapi.vim
-import com.maddyhome.idea.vim.state.VimStateMachine
 import com.maddyhome.idea.vim.state.mode.Mode
-import com.maddyhome.idea.vim.ui.ex.ExEntryPanel
 import org.jetbrains.annotations.Range
 import kotlin.math.max
 import kotlin.math.min
@@ -191,21 +191,16 @@ internal class MotionGroup : VimMotionGroupBase() {
       argument: Argument,
       operatorArguments: OperatorArguments,
     ): TextRange? {
+      if (argument !is Argument.Motion) {
+        throw RuntimeException("Unexpected argument passed to getMotionRange2: $argument")
+      }
+
       var start: Int
       var end: Int
-      if (argument.type === Argument.Type.OFFSETS) {
-        val offsets = argument.offsets[caret.vim] ?: return null
-        val (first, second) = offsets.getNativeStartAndEnd()
-        start = first
-        end = second
-      } else {
-        val cmd = argument.motion
-        // Normalize the counts between the command and the motion argument
-        val cnt = cmd.count * operatorArguments.count1
-        val raw = if (operatorArguments.count0 == 0 && cmd.rawCount == 0) 0 else cnt
-        if (cmd.action is MotionActionHandler) {
-          val action = cmd.action as MotionActionHandler
 
+      val action = argument.motion
+      when (action) {
+        is MotionActionHandler -> {
           // This is where we are now
           start = caret.offset
 
@@ -214,8 +209,8 @@ internal class MotionGroup : VimMotionGroupBase() {
             editor.vim,
             caret.vim,
             IjEditorExecutionContext(context!!),
-            cmd.argument,
-            operatorArguments.withCount0(raw),
+            argument.argument,
+            operatorArguments
           )
 
           // Invalid motion
@@ -231,22 +226,32 @@ internal class MotionGroup : VimMotionGroupBase() {
               end++
             }
           }
-        } else if (cmd.action is TextObjectActionHandler) {
-          val action = cmd.action as TextObjectActionHandler
-          val range =
-            action.getRange(editor.vim, caret.vim, IjEditorExecutionContext(context!!), cnt, raw) ?: return null
+        }
+
+        is TextObjectActionHandler -> {
+          val range = action.getRange(
+            editor.vim,
+            caret.vim,
+            IjEditorExecutionContext(context!!),
+            operatorArguments.count1,
+            operatorArguments.count0
+          ) ?: return null
           start = range.startOffset
           end = range.endOffset
-          if (cmd.isLinewiseMotion()) end--
-        } else {
-          throw RuntimeException(
-            "Commands doesn't take " + cmd.action.javaClass.simpleName + " as an operator",
-          )
+          if (argument.isLinewiseMotion()) end--
         }
+
+        is ExternalActionHandler -> {
+          val range = action.getRange(caret.vim) ?: return null
+          start = range.startOffset
+          end = range.endOffset
+        }
+
+        else -> throw RuntimeException("Commands doesn't take " + action.javaClass.simpleName + " as an operator")
       }
 
       // This is a kludge for dw, dW, and d[w. Without this kludge, an extra newline is operated when it shouldn't be.
-      val id = argument.motion.action.id
+      val id = argument.motion.id
       if (id == VimChangeGroupBase.VIM_MOTION_WORD_RIGHT || id == VimChangeGroupBase.VIM_MOTION_BIG_WORD_RIGHT || id == VimChangeGroupBase.VIM_MOTION_CAMEL_RIGHT) {
         val text = editor.document.charsSequence.subSequence(start, end).toString()
         val lastNewLine = text.lastIndexOf('\n')
@@ -256,6 +261,7 @@ internal class MotionGroup : VimMotionGroupBase() {
           }
         }
       }
+
       return TextRange(start, end)
     }
 
@@ -302,19 +308,34 @@ internal class MotionGroup : VimMotionGroupBase() {
     }
 
     fun fileEditorManagerSelectionChangedCallback(event: FileEditorManagerEvent) {
-      ExEntryPanel.deactivateAll()
       val fileEditor = event.oldEditor
       if (fileEditor is TextEditor) {
         val editor = fileEditor.editor
         if (!editor.isDisposed) {
-          ExOutputModel.getInstance(editor).clear()
           editor.vim.let { vimEditor ->
-            if (VimStateMachine.getInstance(vimEditor).mode is Mode.VISUAL) {
-              vimEditor.exitVisualMode()
-              KeyHandler.getInstance().reset(vimEditor)
+            when (vimEditor.mode) {
+              is Mode.VISUAL -> {
+                vimEditor.exitVisualMode()
+                KeyHandler.getInstance().reset(vimEditor)
+              }
+
+              is Mode.CMD_LINE -> {
+                val commandLine = injector.commandLine.getActiveCommandLine() ?: return
+                commandLine.close(refocusOwningEditor = false, resetCaret = false)
+                injector.outputPanel.getCurrentOutputPanel()?.close()
+              }
+
+              else -> {}
             }
           }
         }
+      } else {
+        val state = injector.vimState as VimStateMachineImpl
+        if (state.mode is Mode.VISUAL) {
+          state.mode = state.mode.returnTo
+        }
+        val keyHandler = KeyHandler.getInstance()
+        KeyHandler.getInstance().reset(keyHandler.keyHandlerState, state.mode)
       }
     }
   }

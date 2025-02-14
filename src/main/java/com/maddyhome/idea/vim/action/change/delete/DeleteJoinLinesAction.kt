@@ -20,7 +20,7 @@ import com.maddyhome.idea.vim.handler.ChangeEditorActionHandler
 import com.maddyhome.idea.vim.newapi.ijOptions
 
 @CommandOrMotion(keys = ["gJ"], modes = [Mode.NORMAL])
-public class DeleteJoinLinesAction : ChangeEditorActionHandler.ConditionalSingleExecution() {
+class DeleteJoinLinesAction : ChangeEditorActionHandler.ConditionalSingleExecution() {
   override val type: Command.Type = Command.Type.DELETE
   override fun runAsMulticaret(
     editor: VimEditor,
@@ -40,7 +40,7 @@ public class DeleteJoinLinesAction : ChangeEditorActionHandler.ConditionalSingle
   ): Boolean {
     injector.editorGroup.notifyIdeaJoin(editor)
 
-    return injector.changeGroup.deleteJoinLines(editor, caret, operatorArguments.count1, false, operatorArguments)
+    return injector.changeGroup.deleteJoinLines(editor, context, caret, operatorArguments.count1, false)
   }
 
   override fun execute(

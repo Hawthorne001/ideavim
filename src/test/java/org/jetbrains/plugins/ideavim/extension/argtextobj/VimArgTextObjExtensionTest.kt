@@ -53,7 +53,7 @@ class VimArgTextObjExtensionTest : VimTestCase() {
       Lists.newArrayList("cia"),
       "function(int arg1,    char<caret>* arg2=\"a,b,c(d,e)\")",
       "function(int arg1,    <caret>)",
-Mode.INSERT,
+      Mode.INSERT,
     )
   }
 
@@ -137,6 +137,16 @@ Mode.INSERT,
       Lists.newArrayList("d2ia"),
       "function(int arg1,    char* arg<caret>2=\"a,b,c(d,e)\", bool arg3)",
       "function(int arg1,    <caret>)",
+      Mode.NORMAL(),
+    )
+  }
+
+  @Test
+  fun testDeleteWithMultipleCounts() {
+    doTest(
+      "2d2aa",
+      "function(int <caret>arg1,    char* arg<caret>2=\"a,b,c(d,e)\", bool arg3, string arg4, int arg5)",
+      "function(<caret>)",
       Mode.NORMAL(),
     )
   }

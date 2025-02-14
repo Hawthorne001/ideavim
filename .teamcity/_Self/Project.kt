@@ -8,23 +8,24 @@ import _Self.buildTypes.PropertyBased
 import _Self.buildTypes.Qodana
 import _Self.buildTypes.TestingBuildType
 import _Self.subprojects.GitHub
-import _Self.subprojects.OldTests
 import _Self.subprojects.Releases
 import _Self.vcsRoots.GitHubPullRequest
+import _Self.vcsRoots.ReleasesVcsRoot
 import jetbrains.buildServer.configs.kotlin.v2019_2.BuildType
 import jetbrains.buildServer.configs.kotlin.v2019_2.Project
 
 object Project : Project({
   description = "Vim engine for JetBrains IDEs"
 
-  subProjects(Releases, OldTests, GitHub)
+  subProjects(Releases, GitHub)
 
   // VCS roots
   vcsRoot(GitHubPullRequest)
+  vcsRoot(ReleasesVcsRoot)
 
   // Active tests
   buildType(TestingBuildType("Latest EAP", "<default>", version = "LATEST-EAP-SNAPSHOT"))
-  buildType(TestingBuildType("2023.3", "<default>", version = "2023.3"))
+  buildType(TestingBuildType("2024.2.1", "<default>"))
   buildType(TestingBuildType("Latest EAP With Xorg", "<default>", version = "LATEST-EAP-SNAPSHOT"))
 
   buildType(PropertyBased)
@@ -41,6 +42,9 @@ object Project : Project({
 abstract class IdeaVimBuildType(init: BuildType.() -> Unit) : BuildType({
   artifactRules = """
         +:build/reports => build/reports
+        +:tests/java-tests/build/reports => java-tests/build/reports
+        +:tests/long-running-tests/build/reports => long-running-tests/build/reports
+        +:tests/property-tests/build/reports => property-tests/build/reports
         +:/mnt/agent/temp/buildTmp/ => /mnt/agent/temp/buildTmp/
     """.trimIndent()
 
@@ -50,7 +54,7 @@ abstract class IdeaVimBuildType(init: BuildType.() -> Unit) : BuildType({
     // These requirements define Linux-Medium configuration.
     // Unfortunately, requirement by name (teamcity.agent.name) doesn't work
     //   IDK the reason for it, but on our agents this property is empty
-    equals("teamcity.agent.hardware.cpuCount", "4")
+    equals("teamcity.agent.hardware.cpuCount", "16")
     equals("teamcity.agent.os.family", "Linux")
   }
 

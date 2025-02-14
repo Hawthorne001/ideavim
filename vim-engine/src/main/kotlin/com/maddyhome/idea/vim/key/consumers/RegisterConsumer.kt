@@ -12,13 +12,13 @@ import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.KeyProcessResult
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
+import com.maddyhome.idea.vim.diagnostic.trace
 import com.maddyhome.idea.vim.diagnostic.vimLogger
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.key.KeyConsumer
 import java.awt.event.KeyEvent
 import javax.swing.KeyStroke
 
-public class RegisterConsumer : KeyConsumer {
+class RegisterConsumer : KeyConsumer {
   private companion object {
     private val logger = vimLogger<CharArgumentConsumer>()
   }
@@ -29,24 +29,24 @@ public class RegisterConsumer : KeyConsumer {
     allowKeyMappings: Boolean,
     mappingCompleted: Boolean,
     keyProcessResultBuilder: KeyProcessResult.KeyProcessResultBuilder,
-    shouldRecord: KeyHandler.MutableBoolean,
   ): Boolean {
-    if (!editor.vimStateMachine.isRegisterPending) return false
+    logger.trace { "Entered RegisterConsumer" }
+    val commandBuilder = keyProcessResultBuilder.state.commandBuilder
+    if (!commandBuilder.isRegisterPending) return false
 
     logger.trace("Pending mode.")
-    keyProcessResultBuilder.state.commandBuilder.addKey(key)
+    commandBuilder.addTypedKeyStroke(key)
 
     val chKey: Char = if (key.keyChar == KeyEvent.CHAR_UNDEFINED) 0.toChar() else key.keyChar
-    handleSelectRegister(editor, chKey, keyProcessResultBuilder)
+    handleSelectRegister(chKey, keyProcessResultBuilder)
     return true
   }
 
-  private fun handleSelectRegister(editor: VimEditor, chKey: Char, processBuilder: KeyProcessResult.KeyProcessResultBuilder) {
+  private fun handleSelectRegister(chKey: Char, processBuilder: KeyProcessResult.KeyProcessResultBuilder) {
     logger.trace("Handle select register")
-    editor.vimStateMachine.resetRegisterPending()
     if (injector.registerGroup.isValid(chKey)) {
       logger.trace("Valid register")
-      processBuilder.state.commandBuilder.pushCommandPart(chKey)
+      processBuilder.state.commandBuilder.selectRegister(chKey)
     } else {
       processBuilder.addExecutionStep { lambdaKeyState, lambdaEditor, _ ->
         logger.trace("Invalid register, set command state to BAD_COMMAND")

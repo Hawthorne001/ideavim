@@ -85,7 +85,7 @@ Here are some examples of supported vim features and commands:
 * Motion / deletion / change / window / etc. commands
 * Key mappings
 * Marks / Macros / Digraphs / Registers
-* Some [set commands](https://github.com/JetBrains/ideavim/wiki/%22set%22-commands)
+* Some [set commands](https://github.com/JetBrains/ideavim/wiki/set-commands)
 * Full Vim regexps for search and search/replace
 * Vim web help
 * `~/.ideavimrc` configuration file
@@ -109,7 +109,6 @@ etc
 
 See also:
 
-* [The list of all supported commands](src/main/java/com/maddyhome/idea/vim/package-info.java)
 * [Top feature requests and bugs](https://youtrack.jetbrains.com/issues/VIM?q=%23Unresolved+sort+by%3A+votes)
 * [Vimscript support roadmap](vimscript-info/VIMSCRIPT_ROADMAP.md)
 * [List of supported in-build functions](vimscript-info/FUNCTIONS_INFO.MD)
@@ -222,13 +221,13 @@ Ex commands or via `:map` command mappings:
     * Execute an action by `{action_id}`. Works from Ex command line.
     * Please don't use `:action` in mappings. Use `<Action>` instead.
 
-### Finding action ids:
+### Finding action IDs:
 
-* IJ provides `IdeaVim: track action Ids` command to show the id of the executed actions.
+* IJ provides `IdeaVim: track action IDs` command to show the id of the executed actions.
   This command can be found in "Search everywhere" (double `shift`).
 
     <details>
-        <summary><strong>"Track action Ids" Details</strong> (click to see)</summary>
+        <summary><strong>"Track action IDs" Details</strong> (click to see)</summary>
         <picture>
             <source media="(prefers-color-scheme: dark)" srcset="assets/readme/track_action_dark.gif">
             <img src="assets/readme/track_action_light.gif" alt="track action ids"/>
@@ -310,7 +309,9 @@ endif
 
 The power of contributing drives IdeaVim :muscle:. Even small contributions matter!
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) to start bringing your value to the project.
+See the contribution guide in [CONTRIBUTING.md](CONTRIBUTING.md) to start bringing your value to the project.
+
+😎 In 2025, we launched a rewards program. See the guide for details.
 
 Authors
 -------
@@ -325,11 +326,11 @@ IdeaVim tips and tricks
     - `set ideajoin` to enable join via the IDE. See the [examples](https://jb.gg/f9zji9).
     - Make sure `ideaput` is enabled for `clipboard` to enable native IJ insertion in Vim.
     - Sync IJ bookmarks and IdeaVim global marks: `set ideamarks` (works for marks with capital letters only)
-    - Check out more [ex commands](https://github.com/JetBrains/ideavim/wiki/%22set%22-commands).
+    - Check out more [ex commands](https://github.com/JetBrains/ideavim/wiki/set-commands).
 
 - Use your vim settings with IdeaVim. Put `source ~/.vimrc` in `~/.ideavimrc`.
-- Control the status bar icon via the [`ideastatusicon` option](https://github.com/JetBrains/ideavim/wiki/%22set%22-commands).
-- Not familiar with the default behaviour during a refactoring? See the [`idearefactormode` option](https://github.com/JetBrains/ideavim/wiki/%22set%22-commands).
+- Control the status bar icon via the [`ideastatusicon` option](https://github.com/JetBrains/ideavim/wiki/set-commands).
+- Not familiar with the default behaviour during a refactoring? See the [`idearefactormode` option](https://github.com/JetBrains/ideavim/wiki/set-commands).
 
 Some facts about Vim
 -------
@@ -368,6 +369,10 @@ is the full list of synonyms.
 
 - Fancy constants for [undolevels](https://vimhelp.org/options.txt.html#%27undolevels%27):
   > The local value is set to -123456 when the global value is to be used.
+
+- Vi (not Vim) is a POSIX standard, and [has a spec](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/vi.html)! Vim is mostly POSIX compliant when Vi compatibility is selected with the `'compatible'` option, but there are still some differences that can be changed with `'copoptions'`. The spec is interesting because it documents the behaviour of different commands in a stricter style than the user documentation, describing the current line and column after the command, for example. [More details can be found by reading `:help posix`](https://vimhelp.org/vi_diff.txt.html#posix).
+
+- The Vim documentation contains many easter eggs. We encounter them occasionally, but GitHub user mikesmithgh has compiled a substantial collection [here](https://github.com/mikesmithgh/vimpromptu).
 
 License
 -------

@@ -13,10 +13,15 @@ import com.intellij.internal.statistic.eventLog.EventLogGroup
 import com.intellij.internal.statistic.eventLog.events.EventFields
 import com.intellij.internal.statistic.eventLog.events.VarargEventId
 import com.intellij.internal.statistic.service.fus.collectors.ApplicationUsagesCollector
+import com.maddyhome.idea.vim.newapi.initInjector
 import com.maddyhome.idea.vim.statistic.PluginState.Util.extensionNames
 import com.maddyhome.idea.vim.vimscript.services.VimRcService
 
 internal class VimscriptState : ApplicationUsagesCollector() {
+
+  init {
+    initInjector()
+  }
 
   override fun getGroup(): EventLogGroup = GROUP
 
@@ -24,7 +29,8 @@ internal class VimscriptState : ApplicationUsagesCollector() {
     return setOf(
       VIMSCRIPT.metric(
         SOURCED_FILES with Util.sourcedFiles.size,
-        IDEAVIMRC_SIZE with (VimRcService.findIdeaVimRc()?.readLines()?.filter { !it.matches(Regex("\\s*\".*")) && it.isNotBlank() }?.size ?: -1),
+        IDEAVIMRC_SIZE with (VimRcService.findIdeaVimRc()?.readLines()
+          ?.filter { !it.matches(Regex("\\s*\".*")) && it.isNotBlank() }?.size ?: -1),
         EXTENSIONS_ENABLED_BY_SET with (PluginState.Util.enabledExtensions - Util.extensionsEnabledWithPlug).toList(),
         EXTENSIONS_ENABLED_BY_PLUG with Util.extensionsEnabledWithPlug.toList(),
         IS_IDE_SPECIFIC_CONFIGURATION_USED with Util.isIDESpecificConfigurationUsed,

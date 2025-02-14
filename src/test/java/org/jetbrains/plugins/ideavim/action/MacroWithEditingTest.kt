@@ -10,6 +10,7 @@ package org.jetbrains.plugins.ideavim.action
 
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.injector
+import com.maddyhome.idea.vim.newapi.vim
 import org.jetbrains.plugins.ideavim.SkipNeovimReason
 import org.jetbrains.plugins.ideavim.TestWithoutNeovim
 import org.jetbrains.plugins.ideavim.VimTestCase
@@ -28,8 +29,10 @@ class MacroWithEditingTest : VimTestCase() {
 
   @Test
   fun `test copy and perform macro`() {
-    typeTextInFile(injector.parser.parseKeys("^v\$h\"wy"), "iHello<Esc>")
-    kotlin.test.assertEquals("iHello<Esc>", VimPlugin.getRegister().getRegister('w')?.rawText)
+    typeTextInFile(injector.parser.parseKeys("^v\$h\"wy"), "iHello")
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    kotlin.test.assertEquals("iHello", VimPlugin.getRegister().getRegister(vimEditor, context, 'w')?.text)
     setText("")
     typeText(injector.parser.parseKeys("@w"))
     waitAndAssert {
@@ -39,8 +42,13 @@ class MacroWithEditingTest : VimTestCase() {
 
   @Test
   fun `test copy and perform macro ctrl_a`() {
-    typeTextInFile(injector.parser.parseKeys("^v\$h\"wy"), "<C-A>")
-    kotlin.test.assertEquals("<C-A>", VimPlugin.getRegister().getRegister('w')?.rawText)
+    typeTextInFile(injector.parser.parseKeys("^v\$h\"wy"), "\u0001")
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    kotlin.test.assertEquals(
+      injector.parser.parseKeys("<C-A>"),
+      injector.registerGroup.getRegister(vimEditor, context, 'w')!!.keys
+    )
     setText("1")
     typeText(injector.parser.parseKeys("@w"))
     waitAndAssert {

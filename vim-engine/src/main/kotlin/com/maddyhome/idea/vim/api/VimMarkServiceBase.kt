@@ -27,7 +27,6 @@ import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.common.TextRange
 import com.maddyhome.idea.vim.diagnostic.debug
 import com.maddyhome.idea.vim.diagnostic.vimLogger
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.mark.Jump
 import com.maddyhome.idea.vim.mark.Mark
 import com.maddyhome.idea.vim.mark.VimMark
@@ -38,8 +37,8 @@ import java.lang.Integer.max
 import java.lang.Integer.min
 import java.util.*
 
-public abstract class VimMarkServiceBase : VimMarkService {
-  public companion object {
+abstract class VimMarkServiceBase : VimMarkService {
+  companion object {
     private val logger = vimLogger<VimMarkServiceBase>()
   }
 
@@ -49,10 +48,10 @@ public abstract class VimMarkServiceBase : VimMarkService {
   // marks are stored for primary caret only
   protected val filepathToLocalMarks: HashMap<String, LocalMarks<Char, Mark>> = HashMap()
 
-  public class LocalMarks<K, V> : HashMap<K, V>() {
-    public var myTimestamp: Date = Date()
+  class LocalMarks<K, V> : HashMap<K, V>() {
+    var myTimestamp: Date = Date()
 
-    public fun setTimestamp(timestamp: Date) {
+    fun setTimestamp(timestamp: Date) {
       this.myTimestamp = timestamp
     }
 
@@ -69,7 +68,7 @@ public abstract class VimMarkServiceBase : VimMarkService {
    * @return The map of marks. The keys are `Character`s of the mark names, the values are
    * `Mark`s.
    */
-  public fun getLocalMarks(filePath: String): LocalMarks<Char, Mark> {
+  fun getLocalMarks(filePath: String): LocalMarks<Char, Mark> {
     return filepathToLocalMarks.getOrPut(filePath) { LocalMarks() }
   }
 
@@ -122,6 +121,53 @@ public abstract class VimMarkServiceBase : VimMarkService {
     }
   }
 
+  override fun getRelativeLowercaseMark(caret: ImmutableVimCaret, count: Int): Mark? {
+    val path = caret.editor.getPath() ?: return null
+    if (count == 0) return null
+    val marks = if (caret.isPrimary) {
+      getLocalMarks(path).values
+    } else {
+      caret.markStorage.getMarks().values.toSet()
+    }
+    val lowerCaseMarksWithDistinctPositions = marks.filter { LOWERCASE_MARKS.contains(it.key) }
+      .sortedWithAndDistinctBy(Mark.PositionSorter)
+    // Use a fake mark to easily find the position of the caret in the list of marks.
+    val caretMark = createMark(caret, '[', caret.offset) ?: return null
+    val result = lowerCaseMarksWithDistinctPositions.binarySearch(caretMark, Mark.PositionSorter)
+    val targetIndex = if (result >= 0) {
+      // Caret is on a mark.
+      result + count
+    } else {
+      val insertionPoint = -1 * (result + 1)
+      if ((insertionPoint == 0 && count < 0)
+        || (insertionPoint == lowerCaseMarksWithDistinctPositions.size && count > 0)) {
+        // Moving left if before first mark, or moving right after last mark.
+        return null
+      }
+      if (count < 0) insertionPoint + count else insertionPoint + count - 1
+    }
+    // Excessive values of count.absoluteValue cause us to stop at the first/last mark.
+    val actualIndex = targetIndex.coerceIn(0, lowerCaseMarksWithDistinctPositions.lastIndex)
+    return lowerCaseMarksWithDistinctPositions[actualIndex]
+  }
+
+  /**
+   * Sorts [this] using [comparator], then drops elements that are duplicate by [comparator].
+   *
+   * This is more efficient than calling `sortedWith(comparator).distinctBy {}` because the distinct step can
+   * assume the input is sorted by the same Comparator.
+   */
+  private fun List<Mark>.sortedWithAndDistinctBy(comparator: Comparator<Mark>): List<Mark> {
+    val sorted = this.sortedWith(Mark.PositionSorter)
+    return sorted.fold(ArrayList<Mark>(sorted.size)) { outputList, mark ->
+        val previousMark = outputList.lastOrNull()
+        if (previousMark == null || Mark.PositionSorter.compare(previousMark, mark) != 0) {
+          outputList.add(mark)
+        }
+        outputList
+      }
+  }
+
   override fun getAllLocalMarks(caret: ImmutableVimCaret): Set<Mark> {
     val path = caret.editor.getPath() ?: return emptySet()
     val marks = if (caret.isPrimary) {
@@ -129,7 +175,8 @@ public abstract class VimMarkServiceBase : VimMarkService {
     } else {
       caret.markStorage.getMarks().values.toSet()
     }
-    return (marks + getLocalMark(caret, SELECTION_START_MARK) + getLocalMark(caret, SELECTION_END_MARK)).filterNotNull().toSet()
+    return (marks + getLocalMark(caret, SELECTION_START_MARK) + getLocalMark(caret, SELECTION_END_MARK)).filterNotNull()
+      .toSet()
   }
 
   override fun getAllMarksForFile(editor: VimEditor): List<Pair<ImmutableVimCaret?, Set<Mark>>> {
@@ -182,7 +229,7 @@ public abstract class VimMarkServiceBase : VimMarkService {
       markChar.isLocalMark() -> {
         if (caret.isPrimary) {
           if (mark.key == BEFORE_JUMP_MARK) {
-            val jump = Jump(mark.line, mark.col, mark.filepath)
+            val jump = Jump(mark.line, mark.col, mark.filepath, mark.protocol)
             injector.jumpService.addJump(editor, jump, true)
           }
           getLocalMarks(mark.filepath)[markChar] = mark
@@ -190,6 +237,7 @@ public abstract class VimMarkServiceBase : VimMarkService {
           caret.markStorage.setMark(mark)
         }
       }
+
       else -> return false
     }
     return true
@@ -206,8 +254,9 @@ public abstract class VimMarkServiceBase : VimMarkService {
     if (!markChar.isGlobalMark()) return null
     if (!markChar.isOperationValidOnMark(VimMarkService.Operation.SET, editor.primaryCaret())) return null
     val position = editor.offsetToBufferPosition(offset)
-    val path = editor.getPath() ?: return null
-    return VimMark(markChar, position.line, position.column, path, editor.extractProtocol())
+    val virtualFile = editor.getVirtualFile() ?: return null
+    val path = virtualFile.path
+    return VimMark(markChar, position.line, position.column, path, virtualFile.protocol)
   }
 
   override fun setGlobalMark(editor: VimEditor, char: Char, offset: Int): Boolean {
@@ -288,13 +337,15 @@ public abstract class VimMarkServiceBase : VimMarkService {
   private fun removeSelectionStartMark(caret: ImmutableVimCaret) {
     val selectionInfo = caret.lastSelectionInfo
     val startPosition = selectionInfo.start
-    if (startPosition != null) caret.lastSelectionInfo = SelectionInfo(null, selectionInfo.end, selectionInfo.selectionType)
+    if (startPosition != null) caret.lastSelectionInfo =
+      SelectionInfo(null, selectionInfo.end, selectionInfo.selectionType)
   }
 
   private fun removeSelectionEndMark(caret: ImmutableVimCaret) {
     val selectionInfo = caret.lastSelectionInfo
     val endPosition = selectionInfo.end
-    if (endPosition != null) caret.lastSelectionInfo = SelectionInfo(selectionInfo.start, null, selectionInfo.selectionType)
+    if (endPosition != null) caret.lastSelectionInfo =
+      SelectionInfo(selectionInfo.start, null, selectionInfo.selectionType)
   }
 
   override fun removeGlobalMark(char: Char) {
@@ -367,7 +418,7 @@ public abstract class VimMarkServiceBase : VimMarkService {
           val markLineStartOffset = editor.getLineStartOffset(mark.line)
           val markLineEndOffset = editor.getLineEndOffset(mark.line, true)
 
-          val command = editor.vimStateMachine.executingCommand
+          val command = injector.vimState.executingCommand
           // If text is being changed from the start of the mark line (a special case for mark deletion)
           val changeFromMarkLineStart =
             (command != null && command.type === Command.Type.CHANGE && delStartOffset == markLineStartOffset)
@@ -424,6 +475,7 @@ public abstract class VimMarkServiceBase : VimMarkService {
       VimMarkService.Operation.GET -> {
         char.isLocalMark() || char.isGlobalMark()
       }
+
       VimMarkService.Operation.SET -> {
         (
           LOWERCASE_MARKS +
@@ -436,6 +488,7 @@ public abstract class VimMarkServiceBase : VimMarkService {
           ).contains(char) ||
           (isCaretPrimary && (UPPERCASE_MARKS + NUMBERED_MARKS).contains(char))
       }
+
       VimMarkService.Operation.REMOVE -> {
         (
           LOWERCASE_MARKS +
@@ -447,6 +500,7 @@ public abstract class VimMarkServiceBase : VimMarkService {
           ).contains(char) ||
           (isCaretPrimary && (UPPERCASE_MARKS + NUMBERED_MARKS).contains(char))
       }
+
       VimMarkService.Operation.SAVE -> {
         isCaretPrimary &&
           (
@@ -484,7 +538,8 @@ public abstract class VimMarkServiceBase : VimMarkService {
   }
 
   private fun getParagraphMark(editor: VimEditor, caret: ImmutableVimCaret, char: Char): VimMark? {
-    val path = editor.getPath() ?: return null
+    val virtualFile = editor.getVirtualFile() ?: return null
+    val path = virtualFile.path
     val count = when (char) {
       PARAGRAPH_START_MARK -> -1
       PARAGRAPH_END_MARK -> 1
@@ -497,20 +552,25 @@ public abstract class VimMarkServiceBase : VimMarkService {
     }
     offset = editor.normalizeOffset(offset, false)
     val lp = editor.offsetToBufferPosition(offset)
-    return VimMark(char, lp.line, lp.column, path, editor.extractProtocol())
+    val protocol = virtualFile.protocol
+    return VimMark(char, lp.line, lp.column, path, protocol)
   }
 
   private fun getSentenceMark(editor: VimEditor, caret: ImmutableVimCaret, char: Char): VimMark? {
-    val path = editor.getPath() ?: return null
+    val virtualFile = editor.getVirtualFile() ?: return null
+    val path = virtualFile.path
     val count = when (char) {
       SENTENCE_START_MARK -> -1
       SENTENCE_END_MARK -> 1
       else -> throw IllegalArgumentException("Invalid sentence mark char")
     }
-    var offset = injector.searchHelper.findNextSentenceStart(editor, caret, count, countCurrent = false, requireAll = true) ?: return null
+    var offset =
+      injector.searchHelper.findNextSentenceStart(editor, caret, count, countCurrent = false, requireAll = true)
+        ?: return null
     offset = editor.normalizeOffset(offset, false)
     val lp = editor.offsetToBufferPosition(offset)
-    return VimMark(char, lp.line, lp.column, path, editor.extractProtocol())
+    val protocol = virtualFile.protocol
+    return VimMark(char, lp.line, lp.column, path, protocol)
   }
 
   protected fun createSelectionStartMark(caret: ImmutableVimCaret): Mark? {
@@ -549,38 +609,41 @@ public abstract class VimMarkServiceBase : VimMarkService {
 
   private fun setSelectionStartMark(caret: ImmutableVimCaret, offset: Int) {
     val selectionInfo = caret.lastSelectionInfo
-    caret.lastSelectionInfo = SelectionInfo(caret.editor.offsetToBufferPosition(offset), selectionInfo.end, selectionInfo.selectionType)
+    caret.lastSelectionInfo =
+      SelectionInfo(caret.editor.offsetToBufferPosition(offset), selectionInfo.end, selectionInfo.selectionType)
   }
 
   private fun setSelectionEndMark(caret: ImmutableVimCaret, offset: Int) {
     val selectionInfo = caret.lastSelectionInfo
-    caret.lastSelectionInfo = SelectionInfo(selectionInfo.start, caret.editor.offsetToBufferPosition(offset), selectionInfo.selectionType)
+    caret.lastSelectionInfo =
+      SelectionInfo(selectionInfo.start, caret.editor.offsetToBufferPosition(offset), selectionInfo.selectionType)
   }
 
   private fun createMark(caret: ImmutableVimCaret, char: Char, offset: Int): Mark? {
     val editor = caret.editor
+    val virtualFile = editor.getVirtualFile() ?: return null
     val position = editor.offsetToBufferPosition(offset)
-    return VimMark(char, position.line, position.column, editor.getPath() ?: return null, editor.extractProtocol())
+    return VimMark(char, position.line, position.column, virtualFile.path, virtualFile.protocol)
   }
 
   protected fun Char.normalizeMarkChar(): Char = if (this == '`') '\'' else this
 }
 
-public class LocalMarkStorage(public var caret: ImmutableVimCaret) {
+class LocalMarkStorage(var caret: ImmutableVimCaret) {
   private val marks = HashMap<Char, Mark>()
 
-  public fun getMarks(): Map<Char, Mark> {
+  fun getMarks(): Map<Char, Mark> {
     return marks.toMap()
   }
 
-  public fun getMark(char: Char): Mark? {
+  fun getMark(char: Char): Mark? {
     if (caret.isPrimary) {
       return injector.markService.getMark(caret, char)
     }
     return marks[char]
   }
 
-  public fun setMark(mark: Mark): Boolean {
+  fun setMark(mark: Mark): Boolean {
     // todo check if set is valid for secondary caret
     if (caret.isPrimary) {
       return injector.markService.setMark(caret, mark)
@@ -590,7 +653,7 @@ public class LocalMarkStorage(public var caret: ImmutableVimCaret) {
     return true
   }
 
-  public fun removeMark(char: Char) {
+  fun removeMark(char: Char) {
     if (caret.isPrimary) {
       return injector.markService.removeLocalMark(caret, char)
     } else {
@@ -598,7 +661,7 @@ public class LocalMarkStorage(public var caret: ImmutableVimCaret) {
     }
   }
 
-  public fun clear(caret: ImmutableVimCaret) {
+  fun clear(caret: ImmutableVimCaret) {
     if (caret.isPrimary) {
       injector.markService.resetAllMarksForCaret(caret)
     } else {

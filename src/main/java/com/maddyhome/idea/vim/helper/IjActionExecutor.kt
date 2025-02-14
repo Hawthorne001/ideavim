@@ -13,28 +13,28 @@ import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.AnActionResult
 import com.intellij.openapi.actionSystem.DataContextWrapper
 import com.intellij.openapi.actionSystem.EmptyAction
 import com.intellij.openapi.actionSystem.IdeActions
 import com.intellij.openapi.actionSystem.PlatformDataKeys
-import com.intellij.openapi.actionSystem.ex.ActionManagerEx
 import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.actionSystem.ex.ActionUtil.performDumbAwareWithCallbacks
 import com.intellij.openapi.actionSystem.impl.ProxyShortcutSet
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
+import com.intellij.openapi.application.ex.ApplicationManagerEx
 import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.command.UndoConfirmationPolicy
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.actionSystem.DocCommandGroupId
-import com.intellij.openapi.project.IndexNotReadyException
+import com.intellij.openapi.progress.util.ProgressIndicatorUtils
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.NlsContexts
-import com.intellij.util.SlowOperations
 import com.maddyhome.idea.vim.RegisterActions
 import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.NativeAction
 import com.maddyhome.idea.vim.api.VimActionExecutor
 import com.maddyhome.idea.vim.api.VimEditor
-import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.EditorActionHandlerBase
 import com.maddyhome.idea.vim.newapi.IjNativeAction
@@ -61,6 +61,9 @@ internal class IjActionExecutor : VimActionExecutor {
     get() = IdeActions.ACTION_EXPAND_REGION
   override val ACTION_EXPAND_REGION_RECURSIVELY: String
     get() = IdeActions.ACTION_EXPAND_REGION_RECURSIVELY
+  override val ACTION_EXPAND_COLLAPSE_TOGGLE: String
+    // [VERSION UPDATE] 2024.3+ Replace raw "ExpandCollapseToggleAction" with IdeActions.ACTION_EXPAND_COLLAPSE_TOGGLE_REGION from the platform.
+    get() = "ExpandCollapseToggleAction"
 
   /**
    * Execute an action
@@ -69,14 +72,19 @@ internal class IjActionExecutor : VimActionExecutor {
    * @param context The context to run it in
    */
   override fun executeAction(editor: VimEditor?, action: NativeAction, context: ExecutionContext): Boolean {
+    val applicationEx = ApplicationManagerEx.getApplicationEx()
+    if (ProgressIndicatorUtils.isWriteActionRunningOrPending(applicationEx)) {
+      // This is needed for VIM-3376 and it should turn into error at soeme moment
+      thisLogger().warn("Actions cannot be updated when write-action is running or pending")
+    }
+
     val ijAction = (action as IjNativeAction).action
 
     /**
      * Data context that defines that some action was started from IdeaVim.
      * You can call use [runFromVimKey] key to define if intellij action was started from IdeaVim
      */
-    val dataContext = DataContextWrapper(context.ij)
-    dataContext.putUserData(runFromVimKey, true)
+    val dataContext = SimpleDataContext.getSimpleContext(runFromVimKey, true, context.ij)
 
     val actionId = ActionManager.getInstance().getId(ijAction)
     val event = AnActionEvent(
@@ -120,53 +128,17 @@ internal class IjActionExecutor : VimActionExecutor {
     }
   }
 
-  // This is taken directly from ActionUtil.performActionDumbAwareWithCallbacks
-  // But with one check removed. With this check some actions (like `:w` doesn't work)
-  // https://youtrack.jetbrains.com/issue/VIM-2691/File-is-not-saved-on-w
-  private fun performDumbAwareWithCallbacks(
-    action: AnAction,
-    event: AnActionEvent,
-    performRunnable: Runnable,
-  ) {
-    val project = event.project
-    var indexError: IndexNotReadyException? = null
-    val manager = ActionManagerEx.getInstanceEx()
-    manager.fireBeforeActionPerformed(action, event)
-    var result: AnActionResult? = null
-    try {
-      SlowOperations.allowSlowOperations(SlowOperations.ACTION_PERFORM).use {
-        performRunnable.run()
-        result = AnActionResult.PERFORMED
-      }
-    } catch (ex: IndexNotReadyException) {
-      indexError = ex
-      result = AnActionResult.failed(ex)
-    } catch (ex: RuntimeException) {
-      result = AnActionResult.failed(ex)
-      throw ex
-    } catch (ex: Error) {
-      result = AnActionResult.failed(ex)
-      throw ex
-    } finally {
-      if (result == null) result = AnActionResult.failed(Throwable())
-      manager.fireAfterActionPerformed(action, event, result!!)
-    }
-    if (indexError != null) {
-      ActionUtil.showDumbModeWarning(project, action, event)
-    }
-  }
-
   /**
    * Execute an action by name
    *
    * @param name    The name of the action to execute
    * @param context The context to run it in
    */
-  override fun executeAction(name: @NonNls String, context: ExecutionContext): Boolean {
+  override fun executeAction(editor: VimEditor, name: @NonNls String, context: ExecutionContext): Boolean {
     val action = getAction(name, context)
-    return action != null && executeAction(null, IjNativeAction(action), context)
+    return action != null && executeAction(editor, IjNativeAction(action), context)
   }
-  
+
   private fun getAction(name: String, context: ExecutionContext): AnAction? {
     val actionManager = ActionManager.getInstance()
     val action = actionManager.getAction(name)
@@ -210,8 +182,8 @@ internal class IjActionExecutor : VimActionExecutor {
     CommandProcessor.getInstance().executeCommand(editor?.ij?.project, runnable, name, groupId)
   }
 
-  override fun executeEsc(context: ExecutionContext): Boolean {
-    return executeAction(IdeActions.ACTION_EDITOR_ESCAPE, context)
+  override fun executeEsc(editor: VimEditor, context: ExecutionContext): Boolean {
+    return executeAction(editor, IdeActions.ACTION_EDITOR_ESCAPE, context)
   }
 
   override fun executeVimAction(
@@ -223,7 +195,7 @@ internal class IjActionExecutor : VimActionExecutor {
     CommandProcessor.getInstance()
       .executeCommand(
         editor.ij.project,
-        { cmd.execute(editor, injector.executionContextManager.onEditor(editor, context), operatorArguments) },
+        { cmd.execute(editor, context, operatorArguments) },
         cmd.id,
         DocCommandGroupId.noneGroupId(editor.ij.document),
         UndoConfirmationPolicy.DEFAULT,

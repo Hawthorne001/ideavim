@@ -8,6 +8,7 @@ package com.maddyhome.idea.vim.helper
 
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.VisualPosition
+import com.intellij.openapi.editor.textarea.TextComponentEditor
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.getVisualLineCount
 import com.maddyhome.idea.vim.api.injector
@@ -28,7 +29,6 @@ import com.maddyhome.idea.vim.helper.EditorHelper.scrollVisualLineToBottomOfScre
 import com.maddyhome.idea.vim.helper.EditorHelper.scrollVisualLineToMiddleOfScreen
 import com.maddyhome.idea.vim.helper.EditorHelper.scrollVisualLineToTopOfScreen
 import com.maddyhome.idea.vim.newapi.vim
-import com.maddyhome.idea.vim.state.VimStateMachine
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -39,6 +39,9 @@ import kotlin.math.roundToInt
 internal object ScrollViewHelper {
   @JvmStatic
   fun scrollCaretIntoView(editor: Editor) {
+    // TextComponentEditor doesn't support scrolling. We only support TextComponentEditor for the fallback window
+    if (editor is TextComponentEditor) return
+
     val position = editor.caretModel.visualPosition
     scrollCaretIntoViewVertically(editor, position.line)
     scrollCaretIntoViewHorizontally(editor, position)
@@ -176,7 +179,7 @@ internal object ScrollViewHelper {
   }
 
   private fun getScrollJump(editor: VimEditor, height: Int): Int {
-    val flags = VimStateMachine.getInstance(editor).executingCommandFlags
+    val flags = injector.vimState.executingCommandFlags
     val scrollJump = !flags.contains(CommandFlags.FLAG_IGNORE_SCROLL_JUMP)
 
     // Default value is 1. Zero is a valid value, but we normalise to 1 - we always want to scroll at least one line
@@ -199,7 +202,7 @@ internal object ScrollViewHelper {
     val caretColumn = position.column
     val halfWidth = getApproximateScreenWidth(editor) / 2
     val scrollOffset = getNormalizedSideScrollOffset(editor)
-    val flags = VimStateMachine.getInstance(vimEditor).executingCommandFlags
+    val flags = injector.vimState.executingCommandFlags
     val allowSidescroll = !flags.contains(CommandFlags.FLAG_IGNORE_SIDE_SCROLL_JUMP)
     val sidescroll = injector.options(vimEditor).sidescroll
     val offsetLeft = caretColumn - (currentVisualLeftColumn + scrollOffset)

@@ -19,18 +19,18 @@ import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.CommandFlags
 import com.maddyhome.idea.vim.command.CommandFlags.FLAG_MOT_LINEWISE
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.common.TextRange
 import com.maddyhome.idea.vim.group.visual.VimSelection
 import com.maddyhome.idea.vim.handler.VisualOperatorActionHandler
 import com.maddyhome.idea.vim.helper.enumSetOf
+import com.maddyhome.idea.vim.state.mode.SelectionType
 import java.util.*
 
 /**
  * @author vlan
  */
 @CommandOrMotion(keys = ["R", "S"], modes = [Mode.VISUAL])
-public class ChangeVisualLinesAction : VisualOperatorActionHandler.ForEachCaret() {
+class ChangeVisualLinesAction : VisualOperatorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.CHANGE
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(FLAG_MOT_LINEWISE)
@@ -56,7 +56,6 @@ public class ChangeVisualLinesAction : VisualOperatorActionHandler.ForEachCaret(
       lineRange,
       SelectionType.LINE_WISE,
       context,
-      operatorArguments,
     )
   }
 }

@@ -22,7 +22,7 @@ import com.maddyhome.idea.vim.handler.VisualOperatorActionHandler
  * @author vlan
  */
 @CommandOrMotion(keys = ["d", "x", "<Del>"], modes = [Mode.VISUAL])
-public class DeleteVisualAction : VisualOperatorActionHandler.ForEachCaret() {
+class DeleteVisualAction : VisualOperatorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.DELETE
 
   override fun executeAction(
@@ -36,11 +36,11 @@ public class DeleteVisualAction : VisualOperatorActionHandler.ForEachCaret() {
     val selectionType = range.type
     return injector.changeGroup.deleteRange(
       editor,
+      context,
       caret,
       range.toVimTextRange(false),
       selectionType,
       false,
-      operatorArguments,
     )
   }
 }

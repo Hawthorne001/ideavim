@@ -16,6 +16,15 @@ import org.junit.jupiter.api.Test
 
 class SearchEntryFwdActionTest : VimTestCase() {
   @Test
+  fun `test search clears status line`() {
+    configureByText("lorem ipsum")
+    enterSearch("dolor")  // Shows "pattern not found message"
+    assertPluginErrorMessageContains("Pattern not found: dolor")
+    typeText("/")  // No <CR>
+    assertStatusLineCleared()
+  }
+
+  @Test
   fun `search in visual mode`() {
     doTest(
       "v/id<CR>",
@@ -41,13 +50,13 @@ class SearchEntryFwdActionTest : VimTestCase() {
         |${c}consectetur adipiscing elit
         |Sed in orci mauris.
         |Cras id tellus in ex imperdiet egestas.
-    """.trimMargin(),
+      """.trimMargin(),
       """Lorem ipsum dolor sit amet,
-        |consectetur adipiscing elit
+        |${s}consectetur adipiscing elit
         |Sed in orci mauris.
-        |Cras ${c}id tellus in ex imperdiet egestas.
-    """.trimMargin(),
-      Mode.INSERT,
+        |Cras ${c}i${se}d tellus in ex imperdiet egestas.
+      """.trimMargin(),
+      Mode.VISUAL(SelectionType.CHARACTER_WISE, returnTo = Mode.INSERT),
     )
   }
 
@@ -59,13 +68,13 @@ class SearchEntryFwdActionTest : VimTestCase() {
         |${c}consectetur adipiscing elit
         |Sed in orci mauris.
         |Cras id tellus in ex imperdiet egestas.
-    """.trimMargin(),
+      """.trimMargin(),
       """Lorem ipsum dolor sit amet,
-        |consectetur adipiscing elit
+        |${s}consectetur adipiscing elit
         |Sed in orci mauris.
-        |Cras ${c}id tellus in ex imperdiet egestas.
-    """.trimMargin(),
-      Mode.REPLACE,
+        |Cras ${c}i${se}d tellus in ex imperdiet egestas.
+      """.trimMargin(),
+      Mode.VISUAL(SelectionType.CHARACTER_WISE, returnTo = Mode.REPLACE),
     )
   }
 

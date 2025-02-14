@@ -8,6 +8,7 @@
 
 package org.jetbrains.plugins.ideavim.ex
 
+import com.intellij.idea.TestFor
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.newapi.vim
@@ -25,12 +26,44 @@ import javax.swing.KeyStroke
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.fail
+
+// TODO: Split this class
+// This class should handle simple ex entry features, such as starting ex entry, accepting/cancelling, cursor shape etc.
+// Individual actions such as c_CTRL-B or c_CTRL-E (beginning/end of line), c_CTRL-R (insert register), insert digraph
+// or literal, etc. should have individual test classes in the ideavim.ex.action package
+// :cmap should also be tested separately
 
 class ExEntryTest : VimTestCase() {
   @BeforeEach
   override fun setUp(testInfo: TestInfo) {
     super.setUp(testInfo)
     configureByText("\n")
+  }
+
+  @Test
+  fun `test initial text set to empty string`() {
+    typeExInput(":")
+    assertExText("")
+  }
+
+  @Test
+  fun `test initial text set to current line range with count of 1`() {
+    typeExInput("1:")
+    assertExText(".")
+  }
+
+  @Test
+  fun `test initial text set to current line with offset for count greater than 1`() {
+    typeExInput("10:")
+    assertExText(".,.+9")
+  }
+
+  @Test
+  fun `test initial text set to visual marks when invoked in Visual mode`() {
+    configureByText("lorem ipsum\nlorem ipsum")
+    typeText("V", ":")
+    assertExText("'<,'>")
   }
 
   @Test
@@ -77,6 +110,14 @@ class ExEntryTest : VimTestCase() {
     typeExInput(":set incsearch<C-M>")
     assertTrue(options().incsearch)
     assertIsDeactivated()
+  }
+
+  @Test
+  fun `test ex entry clears status line`() {
+    enterSearch("lorem")
+    assertStatusLineMessageContains("Pattern not found: lorem")
+    typeExInput(":")
+    assertStatusLineCleared()
   }
 
   @Test
@@ -253,20 +294,20 @@ class ExEntryTest : VimTestCase() {
 //        assertExText("set incsearch")
 
     typeExInput(":<S-Up>")
+    assertExText("set digraph")
+    typeText("<Up>")
     assertExText("set incsearch")
     typeText("<Up>")
     assertExText("digraph")
-    typeText("<Up>")
-    assertExText("set digraph")
 
     deactivateExEntry()
 
     typeExInput(":<PageUp>")
-    assertExText("set incsearch")
-    typeText("<PageUp>")
     assertExText("digraph")
     typeText("<PageUp>")
     assertExText("set digraph")
+    typeText("<PageUp>")
+    assertExText("set incsearch")
   }
 
   @TestWithoutNeovim(SkipNeovimReason.CMD)
@@ -284,20 +325,20 @@ class ExEntryTest : VimTestCase() {
     deactivateExEntry()
 
     typeExInput(":set<S-Up>")
+    assertExText("set digraph")
+    typeText("<S-Up>")
     assertExText("set incsearch")
     typeText("<S-Up>")
     assertExText("digraph")
-    typeText("<S-Up>")
-    assertExText("set digraph")
 
     deactivateExEntry()
 
     typeExInput(":set<PageUp>")
-    assertExText("set incsearch")
-    typeText("<PageUp>")
     assertExText("digraph")
     typeText("<PageUp>")
     assertExText("set digraph")
+    typeText("<PageUp>")
+    assertExText("set incsearch")
   }
 
   @Test
@@ -316,20 +357,20 @@ class ExEntryTest : VimTestCase() {
     deactivateExEntry()
 
     typeExInput("/<S-Up>")
+    assertExText("something cool")
+    typeText("<S-Up>")
     assertExText("so cool")
     typeText("<S-Up>")
     assertExText("not cool")
-    typeText("<S-Up>")
-    assertExText("something cool")
 
     deactivateExEntry()
 
     typeExInput("/<PageUp>")
-    assertExText("so cool")
-    typeText("<PageUp>")
     assertExText("not cool")
     typeText("<PageUp>")
     assertExText("something cool")
+    typeText("<PageUp>")
+    assertExText("so cool")
   }
 
   @VimBehaviorDiffers(description = "Vim reorders history even when cancelling entry")
@@ -353,20 +394,20 @@ class ExEntryTest : VimTestCase() {
 //        assertEquals("set incsearch", exEntryPanel.text)
 
     typeExInput("/so<S-Up>")
+    assertExText("something cool")
+    typeText("<S-Up>")
     assertExText("so cool")
     typeText("<S-Up>")
     assertExText("not cool")
-    typeText("<S-Up>")
-    assertExText("something cool")
 
     deactivateExEntry()
 
     typeExInput("/so<PageUp>")
-    assertExText("so cool")
-    typeText("<PageUp>")
     assertExText("not cool")
     typeText("<PageUp>")
     assertExText("something cool")
+    typeText("<PageUp>")
+    assertExText("so cool")
   }
 
   @Test
@@ -479,7 +520,7 @@ class ExEntryTest : VimTestCase() {
     // this isn't true - digraph entry is stopped, but command line mode continues
     typeExInput(":<C-K>O<Esc>K")
     assertIsActive()
-    assertEquals("K", exEntryPanel.text)
+    assertEquals("K", exEntryPanel.actualText)
 
     deactivateExEntry()
   }
@@ -576,13 +617,11 @@ class ExEntryTest : VimTestCase() {
   fun `test insert multi-line register`() {
     // parseKeys parses <CR> in a way that Register#getText doesn't like
     val keys = mutableListOf<KeyStroke>()
-    keys.addAll(injector.parser.parseKeys("hello"))
-    keys.add(KeyStroke.getKeyStroke('\n'))
-    keys.addAll(injector.parser.parseKeys("world"))
+    keys.addAll(injector.parser.parseKeys("hello<CR>world"))
     VimPlugin.getRegister().setKeys('c', keys)
 
     typeExInput(":<C-R>c")
-    assertExText("hello world")
+    assertExText("hello\u000Dworld")
   }
 
   // TODO: Test other special registers, if/when supported
@@ -632,10 +671,22 @@ class ExEntryTest : VimTestCase() {
     assertExText("hello world")
   }
 
+  @Test
+  @TestFor(issues = ["VIM-3506"])
+  fun `test quote when awaiting for register during insert`() {
+    injector.registerGroup.setKeys('w', injector.parser.parseKeys("world"))
+    configureByText("")
+    typeText(":hello <C-R>")
+    val cmdLine = injector.commandLine.getActiveCommandLine() ?: fail()
+    assertEquals("hello \"", cmdLine.visibleText)
+    typeText("w")
+    assertEquals("hello world", cmdLine.visibleText)
+  }
+
   private fun typeExInput(text: String) {
     assertTrue(
-      text.startsWith(":") || text.startsWith('/') || text.startsWith('?'),
-      "Ex command must start with ':', '/' or '?'",
+      Regex("""\d*[:/?].*""").matches(text),
+      "Ex command must start with '[count]:', '[count]/' or '[count]?'",
     )
 
     val keys = mutableListOf<KeyStroke>()

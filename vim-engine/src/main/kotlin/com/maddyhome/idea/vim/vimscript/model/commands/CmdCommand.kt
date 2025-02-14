@@ -15,7 +15,7 @@ import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.common.CommandAlias
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.helper.VimNlsSafe
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 
@@ -24,8 +24,11 @@ import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
  * see "h :command"
  */
 @ExCommand(command = "com[mand]")
-public data class CmdCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
+data class CmdCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier) {
+
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
 
   private val unsupportedArgs = listOf(
     Regex("-range(=[^ ])?") to "-range",
@@ -41,8 +44,6 @@ public data class CmdCommand(val ranges: Ranges, val argument: String) : Command
 
   // Static definitions needed for aliases.
   private companion object {
-    const val overridePrefix = "!"
-
     @VimNlsSafe
     const val argsPrefix = "-nargs"
 
@@ -50,16 +51,21 @@ public data class CmdCommand(val ranges: Ranges, val argument: String) : Command
     const val zeroOrOneArguments = "?"
     const val moreThanZeroArguments = "+"
   }
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     val result: Boolean = if (argument.trim().isEmpty()) {
-      this.listAlias(editor, "")
+      this.listAlias(editor, context, "")
     } else {
-      this.addAlias(editor)
+      this.addAlias(editor, context)
     }
     return if (result) ExecutionResult.Success else ExecutionResult.Error
   }
 
-  private fun listAlias(editor: VimEditor, filter: String): Boolean {
+  private fun listAlias(editor: VimEditor, context: ExecutionContext, filter: String): Boolean {
     val lineSeparator = "\n"
     val allAliases = injector.commandGroup.listAliases()
     val aliases = allAliases.filter {
@@ -67,18 +73,15 @@ public data class CmdCommand(val ranges: Ranges, val argument: String) : Command
     }.map {
       "${it.key.padEnd(12)}${it.value.numberOfArguments.padEnd(11)}${it.value.printValue()}"
     }.sortedWith(String.CASE_INSENSITIVE_ORDER).joinToString(lineSeparator)
-    injector.exOutputPanel.getPanel(editor).output("Name        Args       Definition$lineSeparator$aliases")
+    injector.outputPanel.output(editor, context, "Name        Args       Definition$lineSeparator$aliases")
     return true
   }
 
-  private fun addAlias(editor: VimEditor): Boolean {
+  private fun addAlias(editor: VimEditor, context: ExecutionContext): Boolean {
     var argument = argument.trim()
 
     // Handle overwriting of aliases
-    val overrideAlias = argument.startsWith(overridePrefix)
-    if (overrideAlias) {
-      argument = argument.removePrefix(overridePrefix).trim()
-    }
+    val overrideAlias = modifier == CommandModifier.BANG
 
     for ((arg, message) in unsupportedArgs) {
       val match = arg.find(argument)
@@ -110,17 +113,22 @@ public data class CmdCommand(val ranges: Ranges, val argument: String) : Command
             minNumberOfArgs = 0
             maxNumberOfArgs = -1
           }
+
           zeroOrOneArguments -> maxNumberOfArgs = 1
           moreThanZeroArguments -> {
             minNumberOfArgs = 1
             maxNumberOfArgs = -1
           }
+
           else -> {
             // Technically this should never be reached, but is here just in case
             // I missed something, since the regex limits the value to be ? + * or
             // a valid number, its not possible (as far as I know) to have another value
             // that regex would accept that is not valid.
-            injector.messages.showStatusBarMessage(editor, injector.messages.message("e176.invalid.number.of.arguments"))
+            injector.messages.showStatusBarMessage(
+              editor,
+              injector.messages.message("e176.invalid.number.of.arguments")
+            )
             return false
           }
         }
@@ -150,28 +158,32 @@ public data class CmdCommand(val ranges: Ranges, val argument: String) : Command
 
     // User-aliases need to begin with an uppercase character.
     if (!alias[0].isUpperCase()) {
-      injector.messages.showStatusBarMessage(editor, injector.messages.message("e183.user.defined.commands.must.start.with.an.uppercase.letter"))
+      injector.messages.showStatusBarMessage(
+        editor,
+        injector.messages.message("e183.user.defined.commands.must.start.with.an.uppercase.letter")
+      )
       return false
     }
 
     if (alias in BLACKLISTED_ALIASES) {
-      injector.messages.showStatusBarMessage(editor, injector.messages.message("e841.reserved.name.cannot.be.used.for.user.defined.command"))
+      injector.messages.showStatusBarMessage(
+        editor,
+        injector.messages.message("e841.reserved.name.cannot.be.used.for.user.defined.command")
+      )
       return false
     }
 
     if (argument.isEmpty()) {
-      if (editor == null) {
-        // If there is no editor then we can't list aliases, just return false.
-        // No message should be shown either, since there is no editor.
-        return false
-      }
-      return this.listAlias(editor, alias)
+      return this.listAlias(editor, context, alias)
     }
 
     // If we are not over-writing existing aliases, and an alias with the same command
     // already exists then we want to do nothing.
     if (!overrideAlias && injector.commandGroup.hasAlias(alias)) {
-      injector.messages.showStatusBarMessage(editor, injector.messages.message("e174.command.already.exists.add.to.replace.it"))
+      injector.messages.showStatusBarMessage(
+        editor,
+        injector.messages.message("e174.command.already.exists.add.to.replace.it")
+      )
       return false
     }
 

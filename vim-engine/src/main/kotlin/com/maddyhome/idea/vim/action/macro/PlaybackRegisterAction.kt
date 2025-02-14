@@ -20,7 +20,7 @@ import com.maddyhome.idea.vim.handler.VimActionHandler
 import com.maddyhome.idea.vim.register.RegisterConstants.LAST_COMMAND_REGISTER
 
 @CommandOrMotion(keys = ["@"], modes = [Mode.NORMAL])
-public class PlaybackRegisterAction : VimActionHandler.SingleExecution() {
+class PlaybackRegisterAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_SELF_SYNCHRONIZED
 
   override val argumentType: Argument.Type = Argument.Type.CHARACTER
@@ -31,7 +31,7 @@ public class PlaybackRegisterAction : VimActionHandler.SingleExecution() {
     cmd: Command,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    val argument = cmd.argument ?: return false
+    val argument = cmd.argument as? Argument.Character ?: return false
     val reg = argument.character
     val application = injector.application
     val res = arrayOf(false)
@@ -49,7 +49,7 @@ public class PlaybackRegisterAction : VimActionHandler.SingleExecution() {
           if (reg != '@') { // @ is not a register itself, it just tells vim to use the last register
             injector.macro.lastRegister = reg
           }
-        } catch (e: ExException) {
+        } catch (_: ExException) {
           res[0] = false
         }
       }

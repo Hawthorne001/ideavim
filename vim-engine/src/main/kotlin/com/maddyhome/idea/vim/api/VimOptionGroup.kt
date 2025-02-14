@@ -19,13 +19,13 @@ import com.maddyhome.idea.vim.vimscript.model.datatypes.VimDataType
 import com.maddyhome.idea.vim.vimscript.model.datatypes.VimInt
 import org.jetbrains.annotations.TestOnly
 
-public interface VimOptionGroup {
+interface VimOptionGroup {
   /**
    * Called to initialise the list of available options
    *
    * This function must be idempotent, as it is called each time the plugin is enabled.
    */
-  public fun initialiseOptions()
+  fun initialiseOptions()
 
   /**
    * Initialise the local to buffer and local to window option values for this editor
@@ -46,27 +46,69 @@ public interface VimOptionGroup {
    * [LocalOptionInitialisationScenario.DEFAULTS].
    * @param scenario  The scenario for initialising the local options
    */
-  public fun initialiseLocalOptions(editor: VimEditor, sourceEditor: VimEditor?, scenario: LocalOptionInitialisationScenario)
+  fun initialiseLocalOptions(editor: VimEditor, sourceEditor: VimEditor?, scenario: LocalOptionInitialisationScenario)
+
+  /**
+   * Start tracking when the `~/.ideavimrc` file is being evaluated as part of IdeaVim startup.
+   *
+   * This is used to track when options are explicitly set as part of IdeaVim initialisation. These options will be used
+   * to initialise all subsequently opened windows, so can kind of be considered as "global" (but not in the same way as
+   * [OptionDeclaredScope.GLOBAL]). This is useful for externally mapped options. Typically, the external value is local
+   * to the editor, and setting the external global value doesn't update the local value. By tracking when the option is
+   * initialised during startup, we can reset these external local values when the external global value changes. Any
+   * option that is explicitly set by the user is not reset.
+   */
+  fun startInitVimRc()
+
+  /**
+   * Stop tracking when the `~/.ideavimrc` file is being evaluated as part of IdeaVim startup.
+   */
+  fun endInitVimRc()
 
   /**
    * Get the [Option] by its name or abbreviation
    */
-  public fun getOption(key: String): Option<VimDataType>?
+  fun getOption(key: String): Option<VimDataType>?
 
   /**
    * @return list of all options
    */
-  public fun getAllOptions(): Set<Option<VimDataType>>
+  fun getAllOptions(): Set<Option<VimDataType>>
 
   /**
    * Get the value for the option in the given scope
    */
-  public fun <T : VimDataType> getOptionValue(option: Option<T>, scope: OptionAccessScope): T
+  fun <T : VimDataType> getOptionValue(option: Option<T>, scope: OptionAccessScope): T
 
   /**
    * Set the value for the option in the given scope
    */
-  public fun <T : VimDataType> setOptionValue(option: Option<T>, scope: OptionAccessScope, value: T)
+  fun <T : VimDataType> setOptionValue(option: Option<T>, scope: OptionAccessScope, value: T)
+
+  /**
+   * Resets the option's target scope's value back to its default value
+   *
+   * This is the equivalent of `:set {option}&`, `:setglobal {option}&` and `:setlocal {option}&`.
+   *
+   * When called at global scope, it will reset the global value to the option's default value. Similarly for local
+   * scope. When called at effective scope for local options, it will reset both the local and global values. For
+   * global-local options, the local value is reset to the default value, rather than unset. This matches Vim behaviour.
+   */
+  fun <T : VimDataType> resetToDefaultValue(option: Option<T>, scope: OptionAccessScope)
+
+  /**
+   * Resets the option's target scope's value back to its global value
+   *
+   * This is the equivalent of `:set {option}<`, `:setglobal {option}<` and `:setlocal {option}<`.
+   *
+   * For local options, this will copy the global value to the local value. For global options, or called at global
+   * scope (`:setglobal {option}<`), this is a no-op, as copying the global value to the global value obviously does
+   * nothing. For global-local options called at effective scope, this will also copy the current global value to the
+   * local value, but when called at local scope (`:setlocal {option}<`) then number-based options are unset,
+   * effectively resetting the local value to the global value. This is the only way to unset global-local toggle
+   * options.
+   */
+  fun <T : VimDataType> resetToGlobalValue(option: Option<T>, scope: OptionAccessScope, editor: VimEditor)
 
   /**
    * Get or create cached, parsed data for the option value effective for the editor
@@ -84,7 +126,7 @@ public interface VimOptionGroup {
    *                  provider. The resulting value is cached.
    * @return The cached, parsed option value, ready to be used by code.
    */
-  public fun <T : VimDataType, TData : Any> getParsedEffectiveOptionValue(
+  fun <T : VimDataType, TData : Any> getParsedEffectiveOptionValue(
     option: Option<T>,
     editor: VimEditor?,
     provider: (T) -> TData,
@@ -97,7 +139,7 @@ public interface VimOptionGroup {
    * global-local and local-to-buffer options, which will affect other editors/windows. It resets the local-to-window
    * options for the current editor; this does not affect other editors.
    */
-  public fun resetAllOptions(editor: VimEditor)
+  fun resetAllOptions(editor: VimEditor)
 
   /**
    * Resets all options across all editors, to reset state for testing
@@ -105,7 +147,7 @@ public interface VimOptionGroup {
    * This is required to reset global options set for tests that don't create an editor
    */
   @TestOnly
-  public fun resetAllOptionsForTesting()
+  fun resetAllOptionsForTesting()
 
   /**
    * Adds the option.
@@ -118,13 +160,13 @@ public interface VimOptionGroup {
    *
    * @param option option
    */
-  public fun addOption(option: Option<out VimDataType>)
+  fun addOption(option: Option<out VimDataType>)
 
   /**
    * Removes the option.
    * @param optionName option name or alias
    */
-  public fun removeOption(optionName: String)
+  fun removeOption(optionName: String)
 
   /**
    * Add a listener for when a global option value changes
@@ -137,7 +179,7 @@ public interface VimOptionGroup {
    * @param option  The option to listen to for changes. It must be a [OptionDeclaredScope.GLOBAL] option
    * @param listener  The listener that will be invoked when the global option changes
    */
-  public fun <T : VimDataType> addGlobalOptionChangeListener(option: Option<T>, listener: GlobalOptionChangeListener)
+  fun <T : VimDataType> addGlobalOptionChangeListener(option: Option<T>, listener: GlobalOptionChangeListener)
 
   /**
    * Remove a global option change listener
@@ -145,7 +187,7 @@ public interface VimOptionGroup {
    * @param option  The global option that has previously been subscribed to
    * @param listener  The listener to remove
    */
-  public fun <T : VimDataType> removeGlobalOptionChangeListener(option: Option<T>, listener: GlobalOptionChangeListener)
+  fun <T : VimDataType> removeGlobalOptionChangeListener(option: Option<T>, listener: GlobalOptionChangeListener)
 
   /**
    * Add a listener for when the effective value of an option is changed
@@ -166,7 +208,7 @@ public interface VimOptionGroup {
    * @param option  The option to listen to for changes
    * @param listener  The listener to call when the effective value chagnse.
    */
-  public fun <T : VimDataType> addEffectiveOptionValueChangeListener(
+  fun <T : VimDataType> addEffectiveOptionValueChangeListener(
     option: Option<T>,
     listener: EffectiveOptionValueChangeListener,
   )
@@ -177,9 +219,9 @@ public interface VimOptionGroup {
    * @param option  The option that has previously been subscribed to
    * @param listener  The listener to remove
    */
-  public fun <T : VimDataType> removeEffectiveOptionValueChangeListener(
+  fun <T : VimDataType> removeEffectiveOptionValueChangeListener(
     option: Option<T>,
-    listener: EffectiveOptionValueChangeListener
+    listener: EffectiveOptionValueChangeListener,
   )
 
   /**
@@ -188,41 +230,27 @@ public interface VimOptionGroup {
    * This is added specifically for `'clipboard'` to support the `ideaput` value in the IntelliJ implementation.
    * This function should be used with care!
    */
-  public fun <T : VimDataType> overrideDefaultValue(option: Option<T>, newDefaultValue: T)
+  fun <T : VimDataType> overrideDefaultValue(option: Option<T>, newDefaultValue: T)
 
   /**
    * Return an accessor for options that only have a global value
    */
-  public fun getGlobalOptions(): GlobalOptions
+  fun getGlobalOptions(): GlobalOptions
 
   /**
    * Return an accessor for the effective value of local options
    */
-  public fun getEffectiveOptions(editor: VimEditor): EffectiveOptions
+  fun getEffectiveOptions(editor: VimEditor): EffectiveOptions
 }
 
 /**
  * Checks if option is set to its default value
  */
-public fun <T: VimDataType> VimOptionGroup.isDefaultValue(option: Option<T>, scope: OptionAccessScope): Boolean =
+fun <T : VimDataType> VimOptionGroup.isDefaultValue(option: Option<T>, scope: OptionAccessScope): Boolean =
   getOptionValue(option, scope) == option.defaultValue
 
-/**
- * Resets the option back to its default value
- *
- * Resetting a global-local value at local scope will set it to the default value, rather than set it to its unset
- * value. This matches Vim behaviour.
- */
-public fun <T: VimDataType> VimOptionGroup.resetDefaultValue(option: Option<T>, scope: OptionAccessScope) {
-  setOptionValue(option, scope, option.defaultValue)
-}
-
-/**
- *
- */
-public fun <T: VimDataType> VimOptionGroup.isUnsetValue(option: Option<T>, editor: VimEditor): Boolean {
-  check(option.declaredScope == OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_BUFFER
-    || option.declaredScope == OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW)
+fun <T : VimDataType> VimOptionGroup.isUnsetValue(option: Option<T>, editor: VimEditor): Boolean {
+  check(option.declaredScope.isGlobalLocal())
   return getOptionValue(option, OptionAccessScope.LOCAL(editor)) == option.unsetValue
 }
 
@@ -231,28 +259,28 @@ public fun <T: VimDataType> VimOptionGroup.isUnsetValue(option: Option<T>, edito
  *
  * E.g. the `fileencodings` option with value "ucs-bom,utf-8,default,latin1" will result listOf("ucs-bom", "utf-8", "default", "latin1")
  */
-public fun VimOptionGroup.getStringListValues(option: StringListOption, scope: OptionAccessScope): List<String> {
+fun VimOptionGroup.getStringListValues(option: StringListOption, scope: OptionAccessScope): List<String> {
   return option.split(getOptionValue(option, scope).asString())
 }
 
 /**
  * Sets the toggle option on
  */
-public fun VimOptionGroup.setToggleOption(option: ToggleOption, scope: OptionAccessScope) {
+fun VimOptionGroup.setToggleOption(option: ToggleOption, scope: OptionAccessScope) {
   setOptionValue(option, scope, VimInt.ONE)
 }
 
 /**
  * Unsets a toggle option
  */
-public fun VimOptionGroup.unsetToggleOption(option: ToggleOption, scope: OptionAccessScope) {
+fun VimOptionGroup.unsetToggleOption(option: ToggleOption, scope: OptionAccessScope) {
   setOptionValue(option, scope, VimInt.ZERO)
 }
 
 /**
  * Inverts toggle option value, setting it on if off, or off if on.
  */
-public fun VimOptionGroup.invertToggleOption(option: ToggleOption, scope: OptionAccessScope) {
+fun VimOptionGroup.invertToggleOption(option: ToggleOption, scope: OptionAccessScope) {
   val optionValue = getOptionValue(option, scope)
   setOptionValue(option, scope, if (optionValue.asBoolean()) VimInt.ZERO else VimInt.ONE)
 }
@@ -260,7 +288,7 @@ public fun VimOptionGroup.invertToggleOption(option: ToggleOption, scope: Option
 /**
  * Checks a string list option to see if it contains a specific value
  */
-public fun VimOptionGroup.hasValue(option: StringListOption, scope: OptionAccessScope, value: String): Boolean {
+fun VimOptionGroup.hasValue(option: StringListOption, scope: OptionAccessScope, value: String): Boolean {
   val optionValue = getOptionValue(option, scope)
   return option.split(optionValue.asString()).contains(value)
 }
@@ -268,7 +296,7 @@ public fun VimOptionGroup.hasValue(option: StringListOption, scope: OptionAccess
 /**
  * The scenario for initialising local options
  */
-public enum class LocalOptionInitialisationScenario {
+enum class LocalOptionInitialisationScenario {
   /**
    * Set the local options to default (global) values.
    */

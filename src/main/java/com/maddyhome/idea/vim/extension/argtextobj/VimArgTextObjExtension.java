@@ -9,9 +9,12 @@
 package com.maddyhome.idea.vim.extension.argtextobj;
 
 import com.intellij.openapi.editor.Document;
+import com.maddyhome.idea.vim.KeyHandler;
 import com.maddyhome.idea.vim.VimPlugin;
 import com.maddyhome.idea.vim.api.*;
-import com.maddyhome.idea.vim.command.*;
+import com.maddyhome.idea.vim.command.MappingMode;
+import com.maddyhome.idea.vim.command.OperatorArguments;
+import com.maddyhome.idea.vim.command.TextObjectVisualType;
 import com.maddyhome.idea.vim.common.TextRange;
 import com.maddyhome.idea.vim.extension.ExtensionHandler;
 import com.maddyhome.idea.vim.extension.VimExtension;
@@ -23,7 +26,7 @@ import com.maddyhome.idea.vim.listener.SelectionVimListenerSuppressor;
 import com.maddyhome.idea.vim.listener.VimListenerSuppressor;
 import com.maddyhome.idea.vim.newapi.IjVimCaret;
 import com.maddyhome.idea.vim.newapi.IjVimEditor;
-import com.maddyhome.idea.vim.state.VimStateMachine;
+import com.maddyhome.idea.vim.state.KeyHandlerState;
 import com.maddyhome.idea.vim.state.mode.Mode;
 import com.maddyhome.idea.vim.vimscript.model.datatypes.VimString;
 import org.jetbrains.annotations.Nls;
@@ -32,7 +35,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.EnumSet;
 
 import static com.maddyhome.idea.vim.extension.VimExtensionFacade.putExtensionHandlerMapping;
 import static com.maddyhome.idea.vim.extension.VimExtensionFacade.putKeyMappingIfMissing;
@@ -63,8 +65,8 @@ public class VimArgTextObjExtension implements VimExtension {
    */
   private static class BracketPairs {
     // NOTE: brackets must match by the position, and ordered by rank (highest to lowest).
-    @NotNull private final String openBrackets;
-    @NotNull private final String closeBrackets;
+    private final @NotNull String openBrackets;
+    private final @NotNull String closeBrackets;
 
     static class ParseException extends Exception {
       public ParseException(@NotNull String message) {
@@ -86,8 +88,7 @@ public class VimArgTextObjExtension implements VimExtension {
      * @param bracketPairs comma-separated list of colon-separated bracket pairs.
      * @throws ParseException if a syntax error is detected.
      */
-    @NotNull
-    static BracketPairs fromBracketPairList(@NotNull final String bracketPairs) throws ParseException {
+    static @NotNull BracketPairs fromBracketPairList(final @NotNull String bracketPairs) throws ParseException {
       StringBuilder openBrackets = new StringBuilder();
       StringBuilder closeBrackets = new StringBuilder();
       ParseState state = ParseState.OPEN;
@@ -127,7 +128,7 @@ public class VimArgTextObjExtension implements VimExtension {
       return new BracketPairs(openBrackets.toString(), closeBrackets.toString());
     }
 
-    BracketPairs(@NotNull final String openBrackets, @NotNull final String closeBrackets) {
+    BracketPairs(final @NotNull String openBrackets, final @NotNull String closeBrackets) {
       assert openBrackets.length() == closeBrackets.length();
       this.openBrackets = openBrackets;
       this.closeBrackets = closeBrackets;
@@ -157,10 +158,9 @@ public class VimArgTextObjExtension implements VimExtension {
     }
   }
 
-  public static final BracketPairs DEFAULT_BRACKET_PAIRS = new BracketPairs("(", ")");
+  private static final BracketPairs DEFAULT_BRACKET_PAIRS = new BracketPairs("(", ")");
 
-  @Nullable
-  private static String bracketPairsVariable() {
+  private static @Nullable String bracketPairsVariable() {
     final Object value = VimPlugin.getVariableService().getGlobalVariableValue("argtextobj_pairs");
     if (value instanceof VimString vimValue) {
       return vimValue.getValue();
@@ -191,13 +191,12 @@ public class VimArgTextObjExtension implements VimExtension {
         this.isInner = isInner;
       }
 
-      @Nullable
       @Override
-      public TextRange getRange(@NotNull VimEditor editor,
-                                @NotNull ImmutableVimCaret caret,
-                                @NotNull ExecutionContext context,
-                                int count,
-                                int rawCount) {
+      public @Nullable TextRange getRange(@NotNull VimEditor editor,
+                                          @NotNull ImmutableVimCaret caret,
+                                          @NotNull ExecutionContext context,
+                                          int count,
+                                          int rawCount) {
         BracketPairs bracketPairs = DEFAULT_BRACKET_PAIRS;
         final String bracketPairsVar = bracketPairsVariable();
         if (bracketPairsVar != null) {
@@ -235,28 +234,25 @@ public class VimArgTextObjExtension implements VimExtension {
         return new TextRange(finder.getLeftBound(), finder.getRightBound());
       }
 
-      @NotNull
       @Override
-      public TextObjectVisualType getVisualType() {
+      public @NotNull TextObjectVisualType getVisualType() {
         return TextObjectVisualType.CHARACTER_WISE;
       }
     }
 
     @Override
     public void execute(@NotNull VimEditor editor, @NotNull ExecutionContext context, @NotNull OperatorArguments operatorArguments) {
-
-      IjVimEditor vimEditor = (IjVimEditor) editor;
-      @NotNull VimStateMachine vimStateMachine = VimStateMachine.Companion.getInstance(vimEditor);
-      int count = Math.max(1, vimStateMachine.getCommandBuilder().getCount());
+      @NotNull KeyHandlerState keyHandlerState = KeyHandler.getInstance().getKeyHandlerState();
 
       final ArgumentTextObjectHandler textObjectHandler = new ArgumentTextObjectHandler(isInner);
       //noinspection DuplicatedCode
-      if (!vimStateMachine.isOperatorPending(editor.getMode())) {
+      if (!(editor.getMode() instanceof Mode.OP_PENDING)) {
+        int count0 = operatorArguments.getCount0();
         editor.nativeCarets().forEach((VimCaret caret) -> {
-          final TextRange range = textObjectHandler.getRange(editor, caret, context, count, 0);
+          final TextRange range = textObjectHandler.getRange(editor, caret, context, Math.max(1, count0), count0);
           if (range != null) {
             try (VimListenerSuppressor.Locked ignored = SelectionVimListenerSuppressor.INSTANCE.lock()) {
-              if (vimStateMachine.getMode() instanceof Mode.VISUAL) {
+              if (editor.getMode() instanceof Mode.VISUAL) {
                 com.maddyhome.idea.vim.group.visual.EngineVisualGroupKt.vimSetSelection(caret, range.getStartOffset(), range.getEndOffset() - 1, true);
               } else {
                 InlayHelperKt.moveToInlayAwareOffset(((IjVimCaret)caret).getCaret(), range.getStartOffset());
@@ -265,8 +261,7 @@ public class VimArgTextObjExtension implements VimExtension {
           }
         });
       } else {
-        vimStateMachine.getCommandBuilder().completeCommandPart(new Argument(new Command(count,
-                                                                                         textObjectHandler, Command.Type.MOTION, EnumSet.noneOf(CommandFlags.class))));
+        keyHandlerState.getCommandBuilder().addAction(textObjectHandler);
       }
     }
   }
@@ -276,9 +271,9 @@ public class VimArgTextObjExtension implements VimExtension {
    * position
    */
   private static class ArgBoundsFinder {
-    @NotNull private final CharSequence text;
-    @NotNull private final Document document;
-    @NotNull private final BracketPairs brackets;
+    private final @NotNull CharSequence text;
+    private final @NotNull Document document;
+    private final @NotNull BracketPairs brackets;
     private int leftBound = Integer.MAX_VALUE;
     private int rightBound = Integer.MIN_VALUE;
     private int leftBracket;
@@ -305,7 +300,7 @@ public class VimArgTextObjExtension implements VimExtension {
      * @param position starting position.
      */
     boolean findBoundsAt(int position) throws IllegalStateException {
-      if (text.length() == 0) {
+      if (text.isEmpty()) {
         error = "empty document";
         return false;
       }

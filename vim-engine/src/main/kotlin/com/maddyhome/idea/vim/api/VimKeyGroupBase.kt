@@ -12,10 +12,9 @@ import com.maddyhome.idea.vim.action.change.LazyVimCommand
 import com.maddyhome.idea.vim.command.MappingMode
 import com.maddyhome.idea.vim.extension.ExtensionHandler
 import com.maddyhome.idea.vim.handler.EditorActionHandlerBase
-import com.maddyhome.idea.vim.key.CommandPartNode
 import com.maddyhome.idea.vim.key.KeyMapping
 import com.maddyhome.idea.vim.key.KeyMappingLayer
-import com.maddyhome.idea.vim.key.MappingInfo
+import com.maddyhome.idea.vim.key.KeyStrokeTrie
 import com.maddyhome.idea.vim.key.MappingOwner
 import com.maddyhome.idea.vim.key.RequiredShortcut
 import com.maddyhome.idea.vim.key.RootNode
@@ -26,44 +25,46 @@ import java.util.*
 import javax.swing.KeyStroke
 import kotlin.math.min
 
-public abstract class VimKeyGroupBase : VimKeyGroup {
+abstract class VimKeyGroupBase : VimKeyGroup {
   @JvmField
-  public val myShortcutConflicts: MutableMap<KeyStroke, ShortcutOwnerInfo> = LinkedHashMap()
-  public val requiredShortcutKeys: MutableSet<RequiredShortcut> = HashSet(300)
-  public val keyRoots: MutableMap<MappingMode, CommandPartNode<LazyVimCommand>> = EnumMap(MappingMode::class.java)
-  public val keyMappings: MutableMap<MappingMode, KeyMapping> = EnumMap(MappingMode::class.java)
+  val myShortcutConflicts: MutableMap<KeyStroke, ShortcutOwnerInfo> = LinkedHashMap()
+  val requiredShortcutKeys: MutableSet<RequiredShortcut> = HashSet(300)
+  val builtinCommands: MutableMap<MappingMode, KeyStrokeTrie<LazyVimCommand>> = EnumMap(MappingMode::class.java)
+  val keyMappings: MutableMap<MappingMode, KeyMapping> = EnumMap(MappingMode::class.java)
 
   override fun removeKeyMapping(modes: Set<MappingMode>, keys: List<KeyStroke>) {
-    modes.map { getKeyMapping(it) }.forEach { it.delete(keys) }
+    modes.map { getKeyMapping(it) }.forEach { it.removeKeyMapping(keys) }
   }
 
   override fun removeKeyMapping(modes: Set<MappingMode>) {
-    modes.map { getKeyMapping(it) }.forEach { it.delete() }
+    modes.map { getKeyMapping(it) }.forEach { it.clear() }
   }
 
   override fun hasmapto(mode: MappingMode, toKeys: List<KeyStroke>): Boolean {
     return this.getKeyMapping(mode).hasmapto(toKeys)
   }
 
-  override fun hasmapfrom(mode: MappingMode, fromKeys: List<KeyStroke>): Boolean {
-    return this.getKeyMapping(mode).hasmapfrom(fromKeys)
-  }
-
   override fun getKeyMapping(mode: MappingMode): KeyMapping {
-    return keyMappings.getOrPut(mode) { KeyMapping() }
+    return keyMappings.getOrPut(mode) { KeyMapping(mode) }
   }
 
   override fun resetKeyMappings() {
     keyMappings.clear()
   }
 
+  @Suppress("DEPRECATION")
+  @Deprecated("Use getBuiltinCommandTrie", ReplaceWith("getBuiltinCommandsTrie(mappingMode)"))
+  override fun getKeyRoot(mappingMode: MappingMode): com.maddyhome.idea.vim.key.CommandPartNode<LazyVimCommand> =
+    RootNode(getBuiltinCommandsTrie(mappingMode))
+
   /**
-   * Returns the root of the key mapping for the given mapping mode
+   * Returns the root node of the builtin command keystroke trie
    *
    * @param mappingMode The mapping mode
-   * @return The key mapping tree root
+   * @return The root node of the builtin command trie
    */
-  override fun getKeyRoot(mappingMode: MappingMode): CommandPartNode<LazyVimCommand> = keyRoots.getOrPut(mappingMode) { RootNode() }
+  override fun getBuiltinCommandsTrie(mappingMode: MappingMode): KeyStrokeTrie<LazyVimCommand> =
+    builtinCommands.getOrPut(mappingMode) { KeyStrokeTrie<LazyVimCommand>(mappingMode.name[0].lowercase()) }
 
   override fun getKeyMappingLayer(mode: MappingMode): KeyMappingLayer = getKeyMapping(mode)
 
@@ -76,6 +77,7 @@ public abstract class VimKeyGroupBase : VimKeyGroup {
     for (mappingMode in mappingModes) {
       checkIdentity(mappingMode, action.id, keys)
     }
+    @Suppress("DEPRECATION")
     checkCorrectCombination(action, keys)
   }
 
@@ -157,12 +159,11 @@ public abstract class VimKeyGroupBase : VimKeyGroup {
     prefixes = HashMap()
   }
 
+  // Internal structures that used in tests to make sure shortcuts are initialized properly and,
+  //  for example, we didn't make two similar shortcuts for two different actions
+  //  These structures are not initialized during production
   private var identityChecker: MutableMap<MappingMode, MutableSet<MutableList<KeyStroke>>>? = null
   private var prefixes: MutableMap<MutableList<KeyStroke>, String>? = null
-
-  override fun getKeyMappingByOwner(owner: MappingOwner): List<Pair<List<KeyStroke>, MappingInfo>> {
-    return MappingMode.entries.map { getKeyMapping(it) }.flatMap { it.getByOwner(owner) }
-  }
 
   private fun registerKeyMapping(fromKeys: List<KeyStroke>, owner: MappingOwner) {
     val oldSize = requiredShortcutKeys.size
@@ -191,7 +192,7 @@ public abstract class VimKeyGroupBase : VimKeyGroup {
   }
 
   override fun removeKeyMapping(owner: MappingOwner) {
-    MappingMode.entries.map { getKeyMapping(it) }.forEach { it.delete(owner) }
+    MappingMode.entries.map { getKeyMapping(it) }.forEach { it.removeKeyMappingsByOwner(owner) }
     unregisterKeyMapping(owner)
   }
 
@@ -202,7 +203,7 @@ public abstract class VimKeyGroupBase : VimKeyGroup {
     toKeys: List<KeyStroke>,
     recursive: Boolean,
   ) {
-    modes.map { getKeyMapping(it) }.forEach { it.put(fromKeys, toKeys, owner, recursive) }
+    modes.map { getKeyMapping(it) }.forEach { it.put(fromKeys, toKeys, owner, modes, recursive) }
     registerKeyMapping(fromKeys, owner)
   }
 
@@ -214,7 +215,7 @@ public abstract class VimKeyGroupBase : VimKeyGroup {
     originalString: String,
     recursive: Boolean,
   ) {
-    modes.map { getKeyMapping(it) }.forEach { it.put(fromKeys, toExpr, owner, originalString, recursive) }
+    modes.map { getKeyMapping(it) }.forEach { it.put(fromKeys, toExpr, owner, modes, originalString, recursive) }
     registerKeyMapping(fromKeys, owner)
   }
 
@@ -225,18 +226,11 @@ public abstract class VimKeyGroupBase : VimKeyGroup {
     extensionHandler: ExtensionHandler,
     recursive: Boolean,
   ) {
-    modes.map { getKeyMapping(it) }.forEach { it.put(fromKeys, owner, extensionHandler, recursive) }
+    modes.map { getKeyMapping(it) }.forEach { it.put(fromKeys, owner, modes, extensionHandler, recursive) }
     registerKeyMapping(fromKeys, owner)
   }
 
-  override fun getMapTo(mode: MappingMode, toKeys: List<KeyStroke>): List<Pair<List<KeyStroke>, MappingInfo>> {
-    return getKeyMapping(mode).getMapTo(toKeys)
-  }
-
   override fun unregisterCommandActions() {
-    requiredShortcutKeys.clear()
-    keyRoots.clear()
-    identityChecker?.clear()
-    prefixes?.clear()
+    builtinCommands.clear()
   }
 }

@@ -19,13 +19,19 @@ import com.maddyhome.idea.vim.handler.VimActionHandler
 import com.maddyhome.idea.vim.helper.enumSetOf
 import java.util.*
 
+// Remember that Insert mode mappings also apply to Replace
 @CommandOrMotion(keys = ["<C-O>"], modes = [Mode.INSERT])
-public class InsertSingleCommandAction : VimActionHandler.SingleExecution() {
+class InsertSingleCommandAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.INSERT
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_CLEAR_STROKES, CommandFlags.FLAG_EXPECT_MORE)
 
-  override fun execute(editor: VimEditor, context: ExecutionContext, cmd: Command, operatorArguments: OperatorArguments): Boolean {
+  override fun execute(
+    editor: VimEditor,
+    context: ExecutionContext,
+    cmd: Command,
+    operatorArguments: OperatorArguments,
+  ): Boolean {
     injector.changeGroup.processSingleCommand(editor)
     return true
   }

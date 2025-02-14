@@ -8,9 +8,8 @@
 
 package com.maddyhome.idea.vim.regexp.parser.visitors
 
-import com.maddyhome.idea.vim.regexp.parser.error.VimRegexParserException
-import com.maddyhome.idea.vim.regexp.parser.generated.RegexParser
-import com.maddyhome.idea.vim.regexp.parser.generated.RegexParserBaseVisitor
+import com.maddyhome.idea.vim.parser.generated.RegexParser
+import com.maddyhome.idea.vim.parser.generated.RegexParserBaseVisitor
 import org.antlr.v4.runtime.Token
 import org.antlr.v4.runtime.tree.TerminalNode
 
@@ -42,11 +41,24 @@ internal class MultiVisitor : RegexParserBaseVisitor<Multi>() {
     return visitRange(ctx.lower_bound, ctx.upper_bound, ctx.COMMA(), false)
   }
 
-  private fun visitRange(lowerBoundToken: Token?, upperBoundToken: Token?, comma: TerminalNode?, isGreedy: Boolean): Multi {
-    val lowerDelimiter = if (lowerBoundToken == null) RangeBoundary.IntRangeBoundary(0) else RangeBoundary.IntRangeBoundary(lowerBoundToken.text.toInt())
-    val upperDelimiter = if (comma != null) if (upperBoundToken == null) RangeBoundary.InfiniteRangeBoundary else RangeBoundary.IntRangeBoundary(upperBoundToken.text.toInt())
-    else if (lowerBoundToken == null) RangeBoundary.InfiniteRangeBoundary else lowerDelimiter
-    return if (upperDelimiter is RangeBoundary.IntRangeBoundary && lowerDelimiter.i > upperDelimiter.i) Multi.RangeMulti(lowerDelimiter, upperDelimiter, isGreedy)
+  private fun visitRange(
+    lowerBoundToken: Token?,
+    upperBoundToken: Token?,
+    comma: TerminalNode?,
+    isGreedy: Boolean,
+  ): Multi {
+    val lowerDelimiter =
+      if (lowerBoundToken == null) RangeBoundary.IntRangeBoundary(0) else RangeBoundary.IntRangeBoundary(lowerBoundToken.text.toInt())
+    val upperDelimiter =
+      if (comma != null) if (upperBoundToken == null) RangeBoundary.InfiniteRangeBoundary else RangeBoundary.IntRangeBoundary(
+        upperBoundToken.text.toInt()
+      )
+      else if (lowerBoundToken == null) RangeBoundary.InfiniteRangeBoundary else lowerDelimiter
+    return if (upperDelimiter is RangeBoundary.IntRangeBoundary && lowerDelimiter.i > upperDelimiter.i) Multi.RangeMulti(
+      lowerDelimiter,
+      upperDelimiter,
+      isGreedy
+    )
     else Multi.RangeMulti(lowerDelimiter, upperDelimiter, isGreedy)
   }
 
@@ -101,8 +113,8 @@ internal sealed class Multi {
   internal data class RangeMulti(
     val lowerBoundary: RangeBoundary.IntRangeBoundary,
     val upperBoundary: RangeBoundary,
-    val isGreedy: Boolean
-    ) : Multi()
+    val isGreedy: Boolean,
+  ) : Multi()
 
   /**
    * Used to represent an atomic atom. Atoms that are atomic, match
@@ -124,7 +136,7 @@ internal sealed class Multi {
   internal data class AssertionMulti(
     val isPositive: Boolean,
     val isAhead: Boolean,
-    val limit: Int = 0
+    val limit: Int = 0,
   ) : Multi()
 }
 

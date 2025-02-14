@@ -14,12 +14,13 @@ import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.command.Argument
 import com.maddyhome.idea.vim.command.CommandBuilder
 import com.maddyhome.idea.vim.diagnostic.debug
+import com.maddyhome.idea.vim.diagnostic.trace
 import com.maddyhome.idea.vim.diagnostic.vimLogger
 import com.maddyhome.idea.vim.key.KeyConsumer
 import java.awt.event.KeyEvent
 import javax.swing.KeyStroke
 
-public class CharArgumentConsumer: KeyConsumer {
+class CharArgumentConsumer : KeyConsumer {
   private companion object {
     private val logger = vimLogger<CharArgumentConsumer>()
   }
@@ -30,8 +31,8 @@ public class CharArgumentConsumer: KeyConsumer {
     allowKeyMappings: Boolean,
     mappingCompleted: Boolean,
     keyProcessResultBuilder: KeyProcessResult.KeyProcessResultBuilder,
-    shouldRecord: KeyHandler.MutableBoolean,
   ): Boolean {
+    logger.trace { "Entered CharArgumentConsumer" }
     if (!isExpectingCharArgument(keyProcessResultBuilder.state.commandBuilder)) return false
 
     val chKey: Char = if (key.keyChar == KeyEvent.CHAR_UNDEFINED) 0.toChar() else key.keyChar
@@ -45,7 +46,11 @@ public class CharArgumentConsumer: KeyConsumer {
     return expectingCharArgument
   }
 
-  private fun handleCharArgument(key: KeyStroke, chKey: Char, processBuilder: KeyProcessResult.KeyProcessResultBuilder) {
+  private fun handleCharArgument(
+    key: KeyStroke,
+    chKey: Char,
+    processBuilder: KeyProcessResult.KeyProcessResultBuilder,
+  ) {
     var mutableChKey = chKey
     logger.trace("Handling char argument")
     // We are expecting a character argument - is this a regular character the user typed?
@@ -61,7 +66,7 @@ public class CharArgumentConsumer: KeyConsumer {
       processBuilder.addExecutionStep { _, lambdaEditor, _ ->
         // Create the character argument, add it to the current command, and signal we are ready to process the command
         logger.trace("Add character argument to the current command")
-        commandBuilder.completeCommandPart(Argument(mutableChKey))
+        commandBuilder.addArgument(Argument.Character(mutableChKey))
         lambdaEditor.isReplaceCharacter = false
       }
     } else {

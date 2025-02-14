@@ -14,16 +14,15 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.ui.paint.PaintUtil;
 import com.intellij.util.ui.JBUI;
 import com.maddyhome.idea.vim.VimPlugin;
-import com.maddyhome.idea.vim.group.EditorHolderService;
+import com.maddyhome.idea.vim.api.VimCommandLine;
+import com.maddyhome.idea.vim.api.VimCommandLineCaret;
 import com.maddyhome.idea.vim.helper.UiHelper;
 import com.maddyhome.idea.vim.history.HistoryConstants;
 import com.maddyhome.idea.vim.history.HistoryEntry;
-import com.maddyhome.idea.vim.newapi.IjVimEditor;
 import com.maddyhome.idea.vim.options.helpers.GuiCursorAttributes;
 import com.maddyhome.idea.vim.options.helpers.GuiCursorMode;
 import com.maddyhome.idea.vim.options.helpers.GuiCursorOptionHelper;
 import com.maddyhome.idea.vim.options.helpers.GuiCursorType;
-import kotlin.text.StringsKt;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -33,13 +32,18 @@ import javax.swing.*;
 import javax.swing.plaf.basic.BasicTextFieldUI;
 import javax.swing.text.*;
 import java.awt.*;
-import java.awt.event.*;
+import java.awt.event.FocusEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Area;
 import java.awt.geom.Rectangle2D;
 import java.util.Date;
 import java.util.List;
 
-import static java.lang.Math.*;
+import static com.maddyhome.idea.vim.api.VimInjectorKt.injector;
+import static java.lang.Math.ceil;
+import static java.lang.Math.max;
 
 /**
  * Provides a custom keymap for the text field. The keymap is the VIM Ex command keymapping
@@ -65,9 +69,6 @@ public class ExTextField extends JTextField {
         // If we're in the middle of an action (e.g. entering a register to paste, or inserting a digraph), cancel it if
         // the mouse is clicked anywhere. Vim's behavior is to use the mouse click as an event, which can lead to
         // something like : !%!C, which I don't believe is documented, or useful
-        if (currentAction != null) {
-          clearCurrentAction();
-        }
         super.mouseClicked(e);
       }
     });
@@ -80,7 +81,7 @@ public class ExTextField extends JTextField {
 
   void deactivate() {
     clearCurrentAction();
-    EditorHolderService.getInstance().setEditor(null);
+    ExEntryPanel.getInstance().setEditor(null);
     context = null;
   }
 
@@ -186,7 +187,7 @@ public class ExTextField extends JTextField {
     }
   }
 
-  private void updateText(String string) {
+  void updateText(String string) {
     super.setText(string);
     setFontToJField(string);
   }
@@ -201,25 +202,16 @@ public class ExTextField extends JTextField {
 
   // VIM-570
   private void setFontToJField(String stringToDisplay) {
-    super.setFont(UiHelper.selectFont(stringToDisplay));
-  }
-
-  @NotNull
-  String getActualText() {
-    if (actualText != null) {
-      return actualText;
-    }
-    final String text = super.getText();
-    return text == null ? "" : text;
+    super.setFont(UiHelper.selectEditorFont(getEditor(), stringToDisplay));
   }
 
   void setEditor(@NotNull Editor editor, DataContext context) {
     this.context = context;
-    EditorHolderService.getInstance().setEditor(editor);
+    ExEntryPanel.getInstance().setEditor(editor);
   }
 
-  public Editor getEditor() {
-    return EditorHolderService.getInstance().getEditor();
+  public @Nullable Editor getEditor() {
+    return ExEntryPanel.getInstance().getIjEditor();
   }
 
   public DataContext getContext() {
@@ -247,20 +239,17 @@ public class ExTextField extends JTextField {
     // This gets called for ALL events, before the IDE starts to process key events for the action system. We can add a
     // dispatcher that checks that the plugin is enabled, checks that the component with the focus is ExTextField,
     // dispatch to ExEntryPanel#handleKey and if it's processed, mark the event as consumed.
-    if (currentAction != null) {
-      currentAction.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, String.valueOf(c), modifiers));
-    }
-    else {
-      KeyEvent event = new KeyEvent(this, keyChar != KeyEvent.CHAR_UNDEFINED ? KeyEvent.KEY_TYPED :
-        (stroke.isOnKeyRelease() ? KeyEvent.KEY_RELEASED : KeyEvent.KEY_PRESSED),
-        (new Date()).getTime(), modifiers, keyCode, c);
+    KeyEvent event = new KeyEvent(this, keyChar != KeyEvent.CHAR_UNDEFINED
+                                        ? KeyEvent.KEY_TYPED
+                                        : (stroke.isOnKeyRelease() ? KeyEvent.KEY_RELEASED : KeyEvent.KEY_PRESSED),
+                                  (new Date()).getTime(), modifiers, keyCode, c);
 
-      useHandleKeyFromEx = false;
-      try {
-        super.processKeyEvent(event);
-      }finally {
-        useHandleKeyFromEx = true;
-      }
+    useHandleKeyFromEx = false;
+    try {
+      super.processKeyEvent(event);
+    }
+    finally {
+      useHandleKeyFromEx = true;
     }
   }
 
@@ -286,12 +275,7 @@ public class ExTextField extends JTextField {
    * Cancels current action, if there is one. If not, cancels entry.
    */
   void escape() {
-    if (currentAction != null) {
-      clearCurrentAction();
-    }
-    else {
-      cancel();
-    }
+    cancel();
   }
 
   /**
@@ -299,63 +283,15 @@ public class ExTextField extends JTextField {
    */
   void cancel() {
     clearCurrentAction();
-    Editor editor = EditorHolderService.getInstance().getEditor();
-    if (editor != null) {
-      VimPlugin.getProcess().cancelExEntry(new IjVimEditor(editor), true);
+    VimCommandLine commandLine = injector.getCommandLine().getActiveCommandLine();
+    if (commandLine != null) {
+      commandLine.close(true, true);
     }
-  }
-
-  public void setCurrentAction(@NotNull MultiStepAction action, char pendingIndicator) {
-    this.currentAction = action;
-    setCurrentActionPromptCharacter(pendingIndicator);
   }
 
   public void clearCurrentAction() {
-    if (currentAction != null) {
-      currentAction.reset();
-    }
-    currentAction = null;
-    clearCurrentActionPromptCharacter();
-  }
-
-  /**
-   * Text to show while composing a digraph or inserting a literal or register
-   * <p>
-   * The prompt character is inserted directly into the text of the text field, rather than drawn over the top of the
-   * current character. When the action has been completed, the new character(s) are either inserted or overwritten,
-   * depending on the insert/overwrite status of the text field. This mimics Vim's behaviour.
-   *
-   * @param promptCharacter The character to show as prompt
-   */
-  public void setCurrentActionPromptCharacter(char promptCharacter) {
-    actualText = removePromptCharacter();
-    this.currentActionPromptCharacter = promptCharacter;
-    currentActionPromptCharacterOffset = currentActionPromptCharacterOffset == -1 ? getCaretPosition() : currentActionPromptCharacterOffset;
-    StringBuilder sb = new StringBuilder(actualText);
-    sb.insert(currentActionPromptCharacterOffset, currentActionPromptCharacter);
-    updateText(sb.toString());
-    setCaretPosition(currentActionPromptCharacterOffset);
-  }
-
-  private void clearCurrentActionPromptCharacter() {
-    final int offset = getCaretPosition();
-    final String text = removePromptCharacter();
-    updateText(text);
-    setCaretPosition(min(offset, text.length()));
-    currentActionPromptCharacter = '\0';
-    currentActionPromptCharacterOffset = -1;
-    actualText = null;
-  }
-
-  private String removePromptCharacter() {
-    return currentActionPromptCharacterOffset == -1
-      ? super.getText()
-      : StringsKt.removeRange(super.getText(), currentActionPromptCharacterOffset, currentActionPromptCharacterOffset + 1).toString();
-  }
-
-  @Nullable
-  Action getCurrentAction() {
-    return currentAction;
+    VimCommandLine commandLine = injector.getCommandLine().getActiveCommandLine();
+    if (commandLine != null) commandLine.clearPromptCharacter();
   }
 
   private void setInsertMode() {
@@ -377,7 +313,8 @@ public class ExTextField extends JTextField {
   }
 
   private void resetCaret() {
-    if (getCaretPosition() == super.getText().length() || currentActionPromptCharacterOffset == super.getText().length() - 1) {
+    if (getCaretPosition() == super.getText().length() ||
+        currentActionPromptCharacterOffset == super.getText().length() - 1) {
       setNormalModeCaret();
     }
     else {
@@ -408,7 +345,7 @@ public class ExTextField extends JTextField {
     caret.setAttributes(GuiCursorOptionHelper.INSTANCE.getAttributes(GuiCursorMode.CMD_LINE_REPLACE));
   }
 
-  private static class CommandLineCaret extends DefaultCaret {
+  private static class CommandLineCaret extends DefaultCaret implements VimCommandLineCaret {
 
     private GuiCursorType mode;
     private int thickness = 100;
@@ -454,32 +391,45 @@ public class ExTextField extends JTextField {
       if (!isVisible()) return;
 
       // Take a copy of the graphics, so we can mess around with it without having to reset after
-      final Graphics2D g2d = (Graphics2D) g.create();
+      final Graphics2D g2d = (Graphics2D)g.create();
       try {
         final JTextComponent component = getComponent();
 
-        g2d.setColor(component.getCaretColor());
-        g2d.setXORMode(component.getBackground());
+        g2d.setColor(component.getBackground());
+        g2d.setXORMode(component.getCaretColor());
 
         final Rectangle2D r = modelToView(getDot());
         if (r == null) {
           return;
         }
 
+        // Make sure our clip region is still up to date. It might get out of sync due to the IDE scale changing.
+        // (Note that the DefaultCaret class makes this check)
+        if (width > 0 && height > 0 && !contains(r)) {
+          Rectangle clip = g2d.getClipBounds();
+          if (clip != null && !clip.contains(this)) {
+            repaint();
+          }
+          damage(r.getBounds());
+        }
+
         // Make sure not to use the saved bounds! There is no guarantee that damage() has been called first, especially
         // when the caret has not yet been moved or changed
         final FontMetrics fm = component.getFontMetrics(component.getFont());
         if (!hasFocus) {
-          final float outlineThickness = (float) PaintUtil.alignToInt(1.0, g2d);
+          final float outlineThickness = (float)PaintUtil.alignToInt(1.0, g2d);
           final double caretWidth = getCaretWidth(fm, r.getX(), 100);
           final Area area = new Area(new Rectangle2D.Double(r.getX(), r.getY(), caretWidth, r.getHeight()));
-          area.subtract(new Area(new Rectangle2D.Double(r.getX() + outlineThickness, r.getY() + outlineThickness, caretWidth - (2 * outlineThickness), r.getHeight() - (2 * outlineThickness))));
+          area.subtract(new Area(new Rectangle2D.Double(r.getX() + outlineThickness, r.getY() + outlineThickness,
+                                                        caretWidth - (2 * outlineThickness),
+                                                        r.getHeight() - (2 * outlineThickness))));
           g2d.fill(area);
         }
         else {
           final double caretHeight = getCaretHeight(r.getHeight());
           final double caretWidth = getCaretWidth(fm, r.getX(), thickness);
-          g2d.fill(new Rectangle2D.Double(r.getX(), r.getY() + r.getHeight() - caretHeight, caretWidth, caretHeight));
+          Double rect = new Double(r.getX(), r.getY() + r.getHeight() - caretHeight, caretWidth, caretHeight);
+          g2d.fill(rect);
         }
       }
       finally {
@@ -557,23 +507,30 @@ public class ExTextField extends JTextField {
       }
       return fullHeight;
     }
+
+    @Override
+    public int getOffset() {
+      return getDot();
+    }
+
+    @Override
+    public void setOffset(int i) {
+      setDot(i);
+    }
   }
 
   @TestOnly
   public @NonNls String getCaretShape() {
-    CommandLineCaret caret = (CommandLineCaret) getCaret();
+    CommandLineCaret caret = (CommandLineCaret)getCaret();
     return String.format("%s %d", caret.mode, caret.thickness);
   }
 
   private DataContext context;
   private final CommandLineCaret caret;
-  private String lastEntry;
-  private String actualText;
+  String lastEntry;
   private List<HistoryEntry> history;
-  private int histIndex = 0;
-  private @Nullable MultiStepAction currentAction;
-  private char currentActionPromptCharacter;
-  private int currentActionPromptCharacterOffset = -1;
+  int histIndex = 0;
+  int currentActionPromptCharacterOffset = -1;
 
   private static final Logger logger = Logger.getInstance(ExTextField.class.getName());
 }

@@ -8,21 +8,19 @@
 
 package com.maddyhome.idea.vim.key
 
-import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.KeyProcessResult
 import com.maddyhome.idea.vim.api.VimEditor
 import javax.swing.KeyStroke
 
-public interface KeyConsumer {
+interface KeyConsumer {
   /**
    * @return true if consumed key and could do something meaningful wit it
    */
-  public fun consumeKey(
+  fun consumeKey(
     key: KeyStroke,
     editor: VimEditor,
     allowKeyMappings: Boolean,
     mappingCompleted: Boolean,
     keyProcessResultBuilder: KeyProcessResult.KeyProcessResultBuilder,
-    shouldRecord: KeyHandler.MutableBoolean,
   ): Boolean
 }

@@ -26,10 +26,10 @@ import com.maddyhome.idea.vim.newapi.vim
 import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.selectionType
 
-public val VimEditor.isIdeaRefactorModeKeep: Boolean
+val VimEditor.isIdeaRefactorModeKeep: Boolean
   get() = injector.ijOptions(this).idearefactormode.contains(IjOptionConstants.idearefactormode_keep)
 
-public val VimEditor.isIdeaRefactorModeSelect: Boolean
+val VimEditor.isIdeaRefactorModeSelect: Boolean
   get() = injector.ijOptions(this).idearefactormode.contains(IjOptionConstants.idearefactormode_select)
 
 internal object IdeaRefactorModeHelper {
@@ -90,12 +90,11 @@ internal object IdeaRefactorModeHelper {
       corrections.add(Action.RemoveSelection)
     }
     if (mode.hasVisualSelection && editor.selectionModel.hasSelection()) {
-      val autodetectedSubmode = VimPlugin.getVisualMotion().autodetectVisualSubmode(editor.vim)
-      if (mode.selectionType != autodetectedSubmode) {
-        // Update the submode
+      val selectionType = VimPlugin.getVisualMotion().detectSelectionType(editor.vim)
+      if (mode.selectionType != selectionType) {
         val newMode = when (mode) {
-          is Mode.SELECT -> mode.copy(selectionType = autodetectedSubmode)
-          is Mode.VISUAL -> mode.copy(selectionType = autodetectedSubmode)
+          is Mode.SELECT -> mode.copy(selectionType)
+          is Mode.VISUAL -> mode.copy(selectionType)
           else -> error("IdeaVim should be either in visual or select modes")
         }
         corrections.add(Action.SetMode(newMode))

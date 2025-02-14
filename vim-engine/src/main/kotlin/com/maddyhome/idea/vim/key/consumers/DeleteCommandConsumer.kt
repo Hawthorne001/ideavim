@@ -8,10 +8,9 @@
 
 package com.maddyhome.idea.vim.key.consumers
 
-import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.KeyProcessResult
 import com.maddyhome.idea.vim.api.VimEditor
-import com.maddyhome.idea.vim.diagnostic.debug
+import com.maddyhome.idea.vim.diagnostic.trace
 import com.maddyhome.idea.vim.diagnostic.vimLogger
 import com.maddyhome.idea.vim.key.KeyConsumer
 import com.maddyhome.idea.vim.state.KeyHandlerState
@@ -19,7 +18,7 @@ import com.maddyhome.idea.vim.state.mode.Mode
 import java.awt.event.KeyEvent
 import javax.swing.KeyStroke
 
-public class DeleteCommandConsumer : KeyConsumer {
+class DeleteCommandConsumer : KeyConsumer {
   private companion object {
     private val logger = vimLogger<DeleteCommandConsumer>()
   }
@@ -30,8 +29,8 @@ public class DeleteCommandConsumer : KeyConsumer {
     allowKeyMappings: Boolean,
     mappingCompleted: Boolean,
     keyProcessResultBuilder: KeyProcessResult.KeyProcessResultBuilder,
-    shouldRecord: KeyHandler.MutableBoolean,
   ): Boolean {
+    logger.trace { "Entered DeleteCommandConsumer" }
     if (!isDeleteCommandCountKey(key, keyProcessResultBuilder.state, editor.mode)) return false
     keyProcessResultBuilder.state.commandBuilder.deleteCountCharacter()
     return true
@@ -39,12 +38,20 @@ public class DeleteCommandConsumer : KeyConsumer {
 
   private fun isDeleteCommandCountKey(key: KeyStroke, keyState: KeyHandlerState, mode: Mode): Boolean {
     // See `:help N<Del>`
-    val commandBuilder = keyState.commandBuilder
-    val isDeleteCommandKeyCount =
-      (mode is Mode.NORMAL || mode is Mode.VISUAL || mode is Mode.OP_PENDING) &&
-        commandBuilder.isExpectingCount && commandBuilder.count > 0 && key.keyCode == KeyEvent.VK_DELETE
+    if (key.keyCode != KeyEvent.VK_DELETE) {
+      logger.debug("Not a delete key")
+      return false
+    }
 
-    logger.debug { "This is a delete command key count: $isDeleteCommandKeyCount" }
-    return isDeleteCommandKeyCount
+    val commandBuilder = keyState.commandBuilder
+    if ((mode is Mode.NORMAL || mode is Mode.VISUAL || mode is Mode.OP_PENDING)
+      && commandBuilder.isExpectingCount && commandBuilder.hasCountCharacters()
+    ) {
+      logger.debug("Deleting a count character")
+      return true
+    }
+
+    logger.debug("Not a delete key")
+    return false
   }
 }

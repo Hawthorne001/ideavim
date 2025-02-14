@@ -20,7 +20,7 @@ import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.ChangeEditorActionHandler
 
 @CommandOrMotion(keys = ["d"], modes = [Mode.NORMAL])
-public class DeleteMotionAction : ChangeEditorActionHandler.ForEachCaret(), DuplicableOperatorAction {
+class DeleteMotionAction : ChangeEditorActionHandler.ForEachCaret(), DuplicableOperatorAction {
   override val type: Command.Type = Command.Type.DELETE
 
   override val argumentType: Argument.Type = Argument.Type.MOTION
@@ -35,9 +35,9 @@ public class DeleteMotionAction : ChangeEditorActionHandler.ForEachCaret(), Dupl
     operatorArguments: OperatorArguments,
   ): Boolean {
     if (argument == null) return false
-    val (first, second) = injector.changeGroup
+    val (range, selectionType) = injector.changeGroup
       .getDeleteRangeAndType(editor, caret, context, argument, false, operatorArguments)
       ?: return false
-    return injector.changeGroup.deleteRange(editor, caret, first, second, false, operatorArguments)
+    return injector.changeGroup.deleteRange(editor, context, caret, range, selectionType, false)
   }
 }

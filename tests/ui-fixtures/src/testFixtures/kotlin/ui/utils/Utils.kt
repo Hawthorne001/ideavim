@@ -16,17 +16,17 @@ import ui.pages.Editor
 import java.awt.Point
 
 fun RemoteText.doubleClickOnRight(shiftX: Int, fixture: Fixture, button: MouseButton = MouseButton.LEFT_BUTTON) {
-  val updatedPoint = Point(this.point.x + shiftX, this.point.y)
-  fixture.remoteRobot.execute(fixture) {
-    robot.click(component, updatedPoint, button, 2)
-  }
+  fixture.runJs("""
+    const updatedPoint = new Point(${this.point.x + shiftX}, ${this.point.y});
+    robot.click(component, updatedPoint, MouseButton.$button, 2)
+  """.trimIndent())
 }
 
 fun RemoteText.tripleClickOnRight(shiftX: Int, fixture: Fixture, button: MouseButton = MouseButton.LEFT_BUTTON) {
-  val updatedPoint = Point(this.point.x + shiftX, this.point.y)
-  fixture.remoteRobot.execute(fixture) {
-    robot.click(component, updatedPoint, button, 3)
-  }
+  fixture.runJs("""
+    const updatedPoint = new Point(${this.point.x + shiftX}, ${this.point.y});
+    robot.click(component, updatedPoint, MouseButton.$button, 3)
+  """.trimIndent())
 }
 
 fun RemoteText.moveMouseTo(goal: RemoteText, editor: Editor): Boolean {
@@ -66,7 +66,12 @@ fun RemoteText.moveMouseInGutterTo(goal: RemoteText, fixture: Fixture) {
 
 fun Point.moveMouseTo(point: Point, fixture: Fixture) {
   val _point = this
-  fixture.execute { robot.moveMouse(component, _point) }
+  fixture.runJs(
+    """
+    const point = new java.awt.Point(${_point.x}, ${_point.y});
+    robot.moveMouse(component, point)
+  """.trimIndent()
+  )
 
   fixture.runJs(
     """

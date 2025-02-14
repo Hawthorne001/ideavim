@@ -16,11 +16,10 @@ import com.maddyhome.idea.vim.command.CommandFlags
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.VimActionHandler
 import com.maddyhome.idea.vim.helper.enumSetOf
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import java.util.*
 
 @CommandOrMotion(keys = ["<Insert>"], modes = [Mode.INSERT])
-public class InsertInsertAction : VimActionHandler.SingleExecution() {
+class InsertInsertAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.INSERT
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_SAVE_STROKE)
@@ -38,5 +37,5 @@ public class InsertInsertAction : VimActionHandler.SingleExecution() {
 
 private fun processInsert(editor: VimEditor) {
   editor.insertMode = !editor.insertMode
-  editor.vimStateMachine.toggleInsertOverwrite()
+  editor.toggleInsertOverwrite()
 }

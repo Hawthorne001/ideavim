@@ -8,9 +8,9 @@
 package org.jetbrains.plugins.ideavim.action
 
 import com.intellij.idea.TestFor
+import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.injector
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.newapi.vim
 import com.maddyhome.idea.vim.state.mode.Mode
 import org.jetbrains.plugins.ideavim.SkipNeovimReason
@@ -110,7 +110,7 @@ class CopyActionTest : VimTestCase() {
   @TestWithoutNeovim(reason = SkipNeovimReason.DIFFERENT)
   @Test
   fun testYankRegisterUsesLastEnteredRegister() {
-    typeTextInFile("\"a\"byl" + "\"ap", "hel<caret>lo world\n")
+    typeTextInFile("\"a\"byl" + "\"bp", "hel<caret>lo world\n")
     assertState("helllo world\n")
   }
 
@@ -147,7 +147,7 @@ class CopyActionTest : VimTestCase() {
      
       """.trimIndent(),
     )
-    assertTrue(fixture.editor.vim.vimStateMachine.commandBuilder.isEmpty)
+    assertTrue(KeyHandler.getInstance().keyHandlerState.commandBuilder.isEmpty)
   }
 
   @Test
@@ -251,7 +251,10 @@ class CopyActionTest : VimTestCase() {
     enterCommand("set clipboard=unnamed")
     kotlin.test.assertEquals('*', VimPlugin.getRegister().defaultRegister)
     typeText("yy")
-    val starRegister = VimPlugin.getRegister().getRegister('*')
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    val registerService = injector.registerGroup
+    val starRegister = registerService.getRegister(vimEditor, context, '*')
     assertNotNull<Any>(starRegister)
     kotlin.test.assertEquals("bar\n", starRegister.text)
   }
@@ -262,8 +265,11 @@ class CopyActionTest : VimTestCase() {
   @TestFor(issues = ["VIM-792"])
   fun testLineWiseClipboardYankPaste() {
     configureByText("<caret>foo\n")
-    typeText("\"*yy" +  "\"*p")
-    val register = VimPlugin.getRegister().getRegister('*')
+    typeText("\"*yy" + "\"*p")
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    val registerService = injector.registerGroup
+    val register = registerService.getRegister(vimEditor, context, '*')
     assertNotNull<Any>(register)
     kotlin.test.assertEquals("foo\n", register.text)
     val editor = fixture.editor
@@ -291,7 +297,10 @@ class CopyActionTest : VimTestCase() {
       """.trimIndent(),
     )
     typeText("<C-V>j" + "\"*y" + "\"*p")
-    val register = VimPlugin.getRegister().getRegister('*')
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    val registerService = injector.registerGroup
+    val register = registerService.getRegister(vimEditor, context, '*')
     assertNotNull<Any>(register)
     kotlin.test.assertEquals(
       """

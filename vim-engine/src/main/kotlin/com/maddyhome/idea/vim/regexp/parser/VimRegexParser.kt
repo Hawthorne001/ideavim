@@ -8,11 +8,11 @@
 
 package com.maddyhome.idea.vim.regexp.parser
 
+import com.maddyhome.idea.vim.parser.generated.RegexLexer
+import com.maddyhome.idea.vim.parser.generated.RegexParser
 import com.maddyhome.idea.vim.regexp.parser.error.BailErrorLexer
 import com.maddyhome.idea.vim.regexp.parser.error.VimRegexParserErrorStrategy
 import com.maddyhome.idea.vim.regexp.parser.error.VimRegexParserException
-import com.maddyhome.idea.vim.regexp.parser.generated.RegexLexer
-import com.maddyhome.idea.vim.regexp.parser.generated.RegexParser
 import org.antlr.v4.runtime.CharStreams
 import org.antlr.v4.runtime.CommonTokenStream
 
@@ -29,7 +29,7 @@ internal object VimRegexParser {
    *
    * @return The result, either successful or not, of trying to parse the pattern
    */
-  fun parse(pattern: String) : VimRegexParserResult {
+  fun parse(pattern: String): VimRegexParserResult {
     return try {
       val regexLexer = BailErrorLexer(CharStreams.fromString(pattern))
       val tokens = CommonTokenStream(regexLexer)
@@ -49,7 +49,7 @@ internal object VimRegexParser {
    * then comes across a \c, it sets this flag to true, and if it comes across a
    * \C, sets it to false.
    */
-  private fun getCaseSensitivitySettings(lexer: RegexLexer) : CaseSensitivitySettings {
+  private fun getCaseSensitivitySettings(lexer: RegexLexer): CaseSensitivitySettings {
     return when (lexer.ignoreCase) {
       // explicitly compare with true and false, since it might be null
       true -> CaseSensitivitySettings.IGNORE_CASE

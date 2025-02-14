@@ -8,152 +8,23 @@
 
 package com.maddyhome.idea.vim.helper
 
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
+import com.intellij.codeInsight.daemon.impl.HighlightInfo
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.editor.Caret
+import com.intellij.openapi.editor.Editor
+import com.intellij.spellchecker.SpellCheckerSeveritiesProvider
+import com.maddyhome.idea.vim.api.VimEditor
+import com.maddyhome.idea.vim.api.getLineEndOffset
 import com.maddyhome.idea.vim.api.globalOptions
 import com.maddyhome.idea.vim.api.injector
-import com.maddyhome.idea.vim.common.Direction
-import com.maddyhome.idea.vim.helper.SearchHelper.findPositionOfFirstCharacter
-
-private data class State(val position: Int, val trigger: Char, val inQuote: Boolean?, val lastOpenSingleQuotePos: Int)
-
-// bounds are considered inside corresponding quotes
-internal fun checkInString(chars: CharSequence, currentPos: Int, str: Boolean): Boolean {
-  val begin = findPositionOfFirstCharacter(chars, currentPos, setOf('\n'), false, Direction.BACKWARDS)?.second?.plus(1) ?: 0
-  val changes = quoteChanges(chars, begin)
-  // TODO: here we need to keep only the latest element in beforePos (if any) and
-  //   don't need atAndAfterPos to be eagerly collected
-  var (beforePos, atAndAfterPos) = changes.partition { it.position < currentPos }
-
-  var (atPos, afterPos) = atAndAfterPos.partition { it.position == currentPos }
-  assert(atPos.size <= 1) { "Multiple characters at position $currentPos in string $chars" }
-  if (atPos.isNotEmpty()) {
-    val atPosChange = atPos[0]
-    if (afterPos.isEmpty()) {
-      // it is situation when cursor is on closing quote, so we must consider that we are inside quotes pair
-      afterPos = afterPos.toMutableList()
-      afterPos.add(atPosChange)
-    } else {
-      // it is situation when cursor is on opening quote, so we must consider that we are inside quotes pair
-      beforePos = beforePos.toMutableList()
-      beforePos.add(atPosChange)
-    }
-  }
-
-  val lastBeforePos = beforePos.lastOrNull()
-
-  // if opening quote was found before pos (inQuote=true), it doesn't mean pos is in string, we need
-  // to find closing quote to be sure
-  var posInQuote = lastBeforePos?.inQuote?.let { if (it) null else it }
-
-  val lastOpenSingleQuotePosBeforeCurrentPos = lastBeforePos?.lastOpenSingleQuotePos ?: -1
-  var posInChar = if (lastOpenSingleQuotePosBeforeCurrentPos == -1) false else null
-
-  var inQuote: Boolean? = null
-
-  for ((_, trigger, inQuoteAfter, lastOpenSingleQuotePosAfter) in afterPos) {
-    inQuote = inQuoteAfter
-    if (posInQuote != null && posInChar != null) break
-    if (posInQuote == null && inQuoteAfter != null) {
-      // if we found double quote
-      if (trigger == '"') {
-        // then previously it has opposite value
-        posInQuote = !inQuoteAfter
-        // if we found single quote
-      } else if (trigger == '\'') {
-        // then we found closing single quote
-        posInQuote = inQuoteAfter
-      }
-    }
-    if (posInChar == null && lastOpenSingleQuotePosAfter != lastOpenSingleQuotePosBeforeCurrentPos) {
-      // if we found double quote and we reset position of last single quote
-      if (trigger == '"' && lastOpenSingleQuotePosAfter == -1) {
-        // then it means previously there supposed to be open single quote
-        posInChar = false
-        // if we found single quote
-      } else if (trigger == '\'') {
-        // if we reset position of last single quote
-        // it means we found closing single quote
-        // else it means we found opening single quote
-        posInChar = lastOpenSingleQuotePosAfter == -1
-      }
-    }
-  }
-
-  return if (str) posInQuote != null && posInQuote && (inQuote == null || !inQuote) else posInChar != null && posInChar
-}
-
-// yields changes of inQuote and lastOpenSingleQuotePos during while iterating over chars
-// rules are that:
-// - escaped quotes are skipped
-// - single quoted group may enclose only one character, maybe escaped,
-// - so distance between opening and closing single quotes cannot be more than 3
-// - bounds are considered inside corresponding quotes
-private fun quoteChanges(chars: CharSequence, begin: Int) = sequence {
-  // position of last found unpaired single quote
-  var lastOpenSingleQuotePos = -1
-  // whether we are in double quotes
-  // true - definitely yes
-  // false - definitely no
-  // null - maybe yes, in case we found such combination: '"
-  //   in that situation it may be double quote inside single quotes, so we cannot threat it as double quote pair open/close
-  var inQuote: Boolean? = false
-  val charsToSearch = setOf('\'', '"', '\n')
-  var found = findPositionOfFirstCharacter(chars, begin, charsToSearch, false, Direction.FORWARDS)
-  while (found != null && found.first != '\n') {
-    val i = found.second
-
-    val c = found.first
-    when (c) {
-      '"' -> {
-        // if [maybe] in quote, then we know we found closing quote, so now we surely are not in quote
-        if (inQuote == null || inQuote) {
-          // we just found closing double quote
-          inQuote = false
-          // reset last found single quote, as it was in string literal
-          lastOpenSingleQuotePos = -1
-          // if we previously found unclosed single quote
-        } else if (lastOpenSingleQuotePos >= 0) {
-          // ...but we are too far from it
-          if (i - lastOpenSingleQuotePos > 2) {
-            // then it definitely was not opening single quote
-            lastOpenSingleQuotePos = -1
-            // and we found opening double quote
-            inQuote = true
-          } else {
-            // else we don't know if we inside double or single quotes or not
-            inQuote = null
-          }
-          // we were not in double nor in single quote, so now we are in double quote
-        } else {
-          inQuote = true
-        }
-      }
-      '\'' -> {
-        // if we previously found unclosed single quote
-        if (lastOpenSingleQuotePos >= 0) {
-          // ...but we are too far from it
-          if (i - lastOpenSingleQuotePos > 3) {
-            // ... forget about it and threat current one as unclosed
-            lastOpenSingleQuotePos = i
-          } else {
-            // else we found closing single quote
-            lastOpenSingleQuotePos = -1
-            // and if we didn't know whether we are in double quote or not
-            if (inQuote == null) {
-              // then now we are definitely not in
-              inQuote = false
-            }
-          }
-        } else {
-          // we found opening single quote
-          lastOpenSingleQuotePos = i
-        }
-      }
-    }
-    yield(State(i, c, inQuote, lastOpenSingleQuotePos))
-    found =
-      findPositionOfFirstCharacter(chars, i + Direction.FORWARDS.toInt(), charsToSearch, false, Direction.FORWARDS)
-  }
-}
+import com.maddyhome.idea.vim.common.TextRange
+import com.maddyhome.idea.vim.helper.CharacterHelper.charType
+import com.maddyhome.idea.vim.newapi.IjVimEditor
+import it.unimi.dsi.fastutil.ints.IntComparator
+import it.unimi.dsi.fastutil.ints.IntIterator
+import it.unimi.dsi.fastutil.ints.IntRBTreeSet
+import it.unimi.dsi.fastutil.ints.IntSortedSet
 
 /**
  * Check ignorecase and smartcase options to see if a case insensitive search should be performed with the given pattern.
@@ -180,3 +51,151 @@ private fun containsUpperCase(pattern: String): Boolean {
   }
   return false
 }
+
+/**
+ * This counts all the words in the file.
+ */
+fun countWords(
+  vimEditor: VimEditor,
+  start: Int = 0,
+  end: Long = vimEditor.fileSize(),
+): CountPosition {
+  val offset = vimEditor.currentCaret().offset
+
+  var count = 1
+  var position = 0
+  var last = -1
+  var res = start
+  while (true) {
+    res = injector.searchHelper.findNextWord(vimEditor, res, 1, true, false)
+    if (res == start || res == 0 || res > end || res == last) {
+      break
+    }
+
+    count++
+
+    if (res == offset) {
+      position = count
+    } else if (last < offset && res >= offset) {
+      position = if (count == 2) {
+        1
+      } else {
+        count - 1
+      }
+    }
+
+    last = res
+  }
+
+  if (position == 0 && res == offset) {
+    position = count
+  }
+
+  return CountPosition(count, position)
+}
+
+/**
+ * Find the word under the cursor or the next word to the right of the cursor on the current line.
+ *
+ * @param editor The editor to find the word in
+ * @param caret  The caret to find word under
+ * @return The text range of the found word or null if there is no word under/after the cursor on the line
+ */
+fun findWordUnderCursor(editor: Editor, caret: Caret): TextRange? {
+  val vimEditor = IjVimEditor(editor)
+  val chars = editor.document.charsSequence
+  val stop = vimEditor.getLineEndOffset(caret.logicalPosition.line, true)
+
+  val pos = caret.offset
+  // Technically the first condition is covered by the second one, but let it be
+  if (chars.length == 0 || chars.length <= pos) return null
+
+  //if (pos == chars.length() - 1) return new TextRange(chars.length() - 1, chars.length());
+  var start = pos
+  val types = arrayOf(
+    CharacterHelper.CharacterType.KEYWORD,
+    CharacterHelper.CharacterType.PUNCTUATION
+  )
+  for (i in 0..1) {
+    start = pos
+    val type = charType(vimEditor, chars[start], false)
+    if (type == types[i]) {
+      // Search back for start of word
+      while (start > 0 && charType(vimEditor, chars[start - 1], false) == types[i]) {
+        start--
+      }
+    } else {
+      // Search forward for start of word
+      while (start < stop && charType(vimEditor, chars[start], false) != types[i]) {
+        start++
+      }
+    }
+
+    if (start != stop) {
+      break
+    }
+  }
+
+  if (start == stop) {
+    return null
+  }
+  // Special case 1 character words because 'findNextWordEnd' returns one to many chars
+  val end = if (start < stop &&
+    (start >= chars.length - 1 ||
+      charType(vimEditor, chars[start + 1], false) != CharacterHelper.CharacterType.KEYWORD)
+  ) {
+    start + 1
+  } else {
+    injector.searchHelper.findNextWordEnd(vimEditor, start, 1, false, false) + 1
+  }
+
+  return TextRange(start, end)
+}
+
+fun findMisspelledWords(
+  editor: Editor,
+  startOffset: Int,
+  endOffset: Int,
+  skipCount: Int,
+  offsetOrdering: IntComparator?,
+): Int {
+  val project = editor.project ?: return -1
+
+  val offsets: IntSortedSet = IntRBTreeSet(offsetOrdering)
+  DaemonCodeAnalyzerEx.processHighlights(
+    editor.document, project, SpellCheckerSeveritiesProvider.TYPO,
+    startOffset, endOffset
+  ) { highlight: HighlightInfo ->
+    if (highlight.severity === SpellCheckerSeveritiesProvider.TYPO) {
+      val offset = highlight.getStartOffset()
+      if (offset >= startOffset && offset <= endOffset) {
+        offsets.add(offset)
+      }
+    }
+    true
+  }
+
+  if (offsets.isEmpty()) {
+    return -1
+  }
+
+  if (skipCount >= offsets.size) {
+    return offsets.lastInt()
+  } else {
+    val offsetIterator: IntIterator = offsets.iterator()
+    skip(offsetIterator, skipCount)
+    return offsetIterator.nextInt()
+  }
+}
+
+private fun skip(iterator: IntIterator, n: Int) {
+  require(n >= 0) { "Argument must be nonnegative: $n" }
+  var i = n
+  while (i-- != 0 && iterator.hasNext()) iterator.nextInt()
+}
+
+class CountPosition(val count: Int, val position: Int)
+
+private val logger = logger<SearchLogger>()
+
+private class SearchLogger

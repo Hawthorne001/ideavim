@@ -15,7 +15,7 @@ import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.SelectionType
 import java.awt.Color
 
-public fun getModeBackground(mode: Mode?): Color {
+fun getModeBackground(mode: Mode?): Color {
   val isLight = !(LafManager.getInstance()?.currentUIThemeLookAndFeel?.isDark ?: false)
   val keyPostfix = if (isLight) "_light" else "_dark"
   if (injector.variableService.getVimVariable("widget_mode_is_full_customization$keyPostfix")?.asBoolean() != true) {
@@ -31,6 +31,18 @@ public fun getModeBackground(mode: Mode?): Color {
           is Mode.OP_PENDING, null -> UIUtil.getPanelBackground()
         }
       }
+
+      ModeWidgetTheme.DRACULA -> {
+        return when (mode) {
+          Mode.INSERT -> Color.decode("#50FA7B")
+          Mode.REPLACE -> Color.decode("#FF5555")
+          is Mode.NORMAL -> Color.decode("#BD93F9")
+          is Mode.CMD_LINE -> Color.decode("#FFB86C")
+          is Mode.VISUAL, is Mode.SELECT -> Color.decode("#F1FA8C")
+          is Mode.OP_PENDING, null -> UIUtil.getPanelBackground()
+        }
+      }
+
       ModeWidgetTheme.COLORLESS -> {
         return UIUtil.getPanelBackground()
       }
@@ -45,18 +57,26 @@ public fun getModeBackground(mode: Mode?): Color {
         val visualModeBackground = injector.variableService.getVimVariable("widget_mode_visual_background$keyPostfix")
         when (mode.selectionType) {
           SelectionType.CHARACTER_WISE -> visualModeBackground
-          SelectionType.LINE_WISE -> injector.variableService.getVimVariable("widget_mode_visual_line_background$keyPostfix") ?: visualModeBackground
-          SelectionType.BLOCK_WISE -> injector.variableService.getVimVariable("widget_mode_visual_block_background$keyPostfix") ?: visualModeBackground
+          SelectionType.LINE_WISE -> injector.variableService.getVimVariable("widget_mode_visual_line_background$keyPostfix")
+            ?: visualModeBackground
+
+          SelectionType.BLOCK_WISE -> injector.variableService.getVimVariable("widget_mode_visual_block_background$keyPostfix")
+            ?: visualModeBackground
         }
       }
+
       is Mode.SELECT -> {
         val selectModeBackground = injector.variableService.getVimVariable("widget_mode_select_background$keyPostfix")
         when (mode.selectionType) {
           SelectionType.CHARACTER_WISE -> selectModeBackground
-          SelectionType.LINE_WISE -> injector.variableService.getVimVariable("widget_mode_select_line_background$keyPostfix") ?: selectModeBackground
-          SelectionType.BLOCK_WISE -> injector.variableService.getVimVariable("widget_mode_select_block_background$keyPostfix") ?: selectModeBackground
+          SelectionType.LINE_WISE -> injector.variableService.getVimVariable("widget_mode_select_line_background$keyPostfix")
+            ?: selectModeBackground
+
+          SelectionType.BLOCK_WISE -> injector.variableService.getVimVariable("widget_mode_select_block_background$keyPostfix")
+            ?: selectModeBackground
         }
       }
+
       is Mode.OP_PENDING, null -> null
     }?.asString()
     val defaultColor = UIUtil.getPanelBackground()
@@ -67,7 +87,11 @@ public fun getModeBackground(mode: Mode?): Color {
         if (colorString == null) {
           defaultColor
         } else {
-          try { Color.decode(colorString) } catch (e: Exception) { defaultColor }
+          try {
+            Color.decode(colorString)
+          } catch (e: Exception) {
+            defaultColor
+          }
         }
       }
     }
@@ -75,7 +99,7 @@ public fun getModeBackground(mode: Mode?): Color {
   }
 }
 
-public fun getModeForeground(mode: Mode?): Color {
+fun getModeForeground(mode: Mode?): Color {
   val isLight = !(LafManager.getInstance()?.currentUIThemeLookAndFeel?.isDark ?: false)
   val keyPostfix = if (isLight) "_light" else "_dark"
   if (injector.variableService.getVimVariable("widget_mode_is_full_customization$keyPostfix")?.asBoolean() != true) {
@@ -83,6 +107,7 @@ public fun getModeForeground(mode: Mode?): Color {
     val theme = ModeWidgetTheme.parseString(themeString) ?: ModeWidgetTheme.getDefaultTheme()
     return when (theme) {
       ModeWidgetTheme.TERM -> if (isLight) Color.WHITE else Color.BLACK
+      ModeWidgetTheme.DRACULA -> Color.BLACK
       ModeWidgetTheme.COLORLESS -> UIUtil.getLabelForeground()
     }
   } else {
@@ -95,18 +120,26 @@ public fun getModeForeground(mode: Mode?): Color {
         val visualModeBackground = injector.variableService.getVimVariable("widget_mode_visual_foreground$keyPostfix")
         when (mode.selectionType) {
           SelectionType.CHARACTER_WISE -> visualModeBackground
-          SelectionType.LINE_WISE -> injector.variableService.getVimVariable("widget_mode_visual_line_foreground$keyPostfix") ?: visualModeBackground
-          SelectionType.BLOCK_WISE -> injector.variableService.getVimVariable("widget_mode_visual_block_foreground$keyPostfix") ?: visualModeBackground
+          SelectionType.LINE_WISE -> injector.variableService.getVimVariable("widget_mode_visual_line_foreground$keyPostfix")
+            ?: visualModeBackground
+
+          SelectionType.BLOCK_WISE -> injector.variableService.getVimVariable("widget_mode_visual_block_foreground$keyPostfix")
+            ?: visualModeBackground
         }
       }
+
       is Mode.SELECT -> {
         val selectModeBackground = injector.variableService.getVimVariable("widget_mode_select_foreground$keyPostfix")
         when (mode.selectionType) {
           SelectionType.CHARACTER_WISE -> selectModeBackground
-          SelectionType.LINE_WISE -> injector.variableService.getVimVariable("widget_mode_select_line_foreground$keyPostfix") ?: selectModeBackground
-          SelectionType.BLOCK_WISE -> injector.variableService.getVimVariable("widget_mode_select_block_foreground$keyPostfix") ?: selectModeBackground
+          SelectionType.LINE_WISE -> injector.variableService.getVimVariable("widget_mode_select_line_foreground$keyPostfix")
+            ?: selectModeBackground
+
+          SelectionType.BLOCK_WISE -> injector.variableService.getVimVariable("widget_mode_select_block_foreground$keyPostfix")
+            ?: selectModeBackground
         }
       }
+
       is Mode.OP_PENDING, null -> null
     }?.asString()
     val defaultColor = UIUtil.getLabelForeground()
@@ -117,7 +150,11 @@ public fun getModeForeground(mode: Mode?): Color {
         if (colorString == null) {
           defaultColor
         } else {
-          try { Color.decode(colorString) } catch (e: Exception) { defaultColor }
+          try {
+            Color.decode(colorString)
+          } catch (e: Exception) {
+            defaultColor
+          }
         }
       }
     }

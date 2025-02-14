@@ -12,185 +12,32 @@ import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.CapturingProcessHandler
 import com.intellij.execution.process.ProcessAdapter
 import com.intellij.execution.process.ProcessEvent
-import com.intellij.openapi.diagnostic.debug
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicatorProvider
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.util.execution.ParametersListUtil
 import com.intellij.util.text.CharSequenceReader
-import com.maddyhome.idea.vim.KeyHandler.Companion.getInstance
-import com.maddyhome.idea.vim.KeyProcessResult
 import com.maddyhome.idea.vim.VimPlugin
-import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.VimProcessGroupBase
 import com.maddyhome.idea.vim.api.globalOptions
 import com.maddyhome.idea.vim.api.injector
-import com.maddyhome.idea.vim.command.Command
-import com.maddyhome.idea.vim.ex.ExException
-import com.maddyhome.idea.vim.ex.InvalidCommandException
-import com.maddyhome.idea.vim.helper.requestFocus
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.newapi.ij
-import com.maddyhome.idea.vim.state.VimStateMachine.Companion.getInstance
-import com.maddyhome.idea.vim.state.mode.Mode
-import com.maddyhome.idea.vim.state.mode.Mode.NORMAL
-import com.maddyhome.idea.vim.state.mode.Mode.VISUAL
-import com.maddyhome.idea.vim.state.mode.ReturnableFromCmd
-import com.maddyhome.idea.vim.ui.ex.ExEntryPanel
-import com.maddyhome.idea.vim.vimscript.model.CommandLineVimLContext
 import java.io.BufferedWriter
 import java.io.IOException
 import java.io.OutputStreamWriter
 import java.io.Reader
 import java.io.Writer
-import javax.swing.KeyStroke
-import javax.swing.SwingUtilities
 
-public class ProcessGroup : VimProcessGroupBase() {
-  override var lastCommand: String? = null
-    private set
-  override var isCommandProcessing: Boolean = false
-  override var modeBeforeCommandProcessing: Mode? = null
 
-  public override fun startSearchCommand(editor: VimEditor, context: ExecutionContext, count: Int, leader: Char) {
-    // Don't allow searching in one line editors
-    if (editor.isOneLineMode()) return
-
-    val initText = ""
-    val label = leader.toString()
-
-    val panel = ExEntryPanel.getInstance()
-    panel.activate(editor.ij, context.ij, label, initText, count)
-  }
-
-  public override fun endSearchCommand(): String {
-    val panel = ExEntryPanel.getInstance()
-    panel.deactivate(true)
-
-    return panel.text
-  }
-
-  public override fun startExCommand(editor: VimEditor, context: ExecutionContext, cmd: Command) {
-    // Don't allow ex commands in one line editors
-    if (editor.isOneLineMode()) return
-
-    val currentMode = editor.vimStateMachine.mode
-    check(currentMode is ReturnableFromCmd) {
-      "Cannot enable cmd mode from current mode $currentMode"
-    }
-
-    isCommandProcessing = true
-    modeBeforeCommandProcessing = currentMode
-    val initText = getRange(editor, cmd)
-    injector.markService.setVisualSelectionMarks(editor)
-    editor.mode = Mode.CMD_LINE(currentMode)
-    val panel = ExEntryPanel.getInstance()
-    panel.activate(editor.ij, context.ij, ":", initText, 1)
-  }
-
-  public override fun processExKey(editor: VimEditor, stroke: KeyStroke, processResultBuilder: KeyProcessResult.KeyProcessResultBuilder): Boolean {
-    // This will only get called if somehow the key focus ended up in the editor while the ex entry window
-    // is open. So I'll put focus back in the editor and process the key.
-
-    val panel = ExEntryPanel.getInstance()
-    if (panel.isActive) {
-      processResultBuilder.addExecutionStep { _, _, _ ->
-        requestFocus(panel.entry)
-        panel.handleKey(stroke)
-      }
-      return true
-    } else {
-      processResultBuilder.addExecutionStep { _, lambdaEditor, _ ->
-        lambdaEditor.mode = NORMAL()
-        getInstance().reset(lambdaEditor)
-      }
-      return false
-    }
-  }
-
-  public override fun processExEntry(editor: VimEditor, context: ExecutionContext): Boolean {
-    val panel = ExEntryPanel.getInstance()
-    panel.deactivate(true)
-    var res = true
-    try {
-      editor.mode = NORMAL()
-
-      logger.debug("processing command")
-
-      val text = panel.text
-
-      if (panel.label != ":") {
-        // Search is handled via Argument.Type.EX_STRING. Although ProcessExEntryAction is registered as the handler for
-        // <CR> in both command and search modes, it's only invoked for command mode (see KeyHandler.handleCommandNode).
-        // We should never be invoked for anything other than an actual ex command.
-        throw InvalidCommandException("Expected ':' command. Got '" + panel.label + "'", text)
-      }
-
-      logger.debug {
-        "swing=" + SwingUtilities.isEventDispatchThread()
-      }
-
-      injector.vimscriptExecutor.execute(text, editor, context, skipHistory(editor), true, CommandLineVimLContext)
-    } catch (e: ExException) {
-      VimPlugin.showMessage(e.message)
-      VimPlugin.indicateError()
-      res = false
-    } catch (bad: Exception) {
-      logger.error(bad)
-      VimPlugin.indicateError()
-      res = false
-    } finally {
-      isCommandProcessing = false
-      modeBeforeCommandProcessing = null
-    }
-
-    return res
-  }
-
-  // commands executed from map command / macro should not be added to history
-  private fun skipHistory(editor: VimEditor): Boolean {
-    return getInstance(editor).mappingState.isExecutingMap() || injector.macro.isExecutingMacro
-  }
-
-  public override fun cancelExEntry(editor: VimEditor, resetCaret: Boolean) {
-    editor.mode = NORMAL()
-    getInstance().reset(editor)
-    val panel = ExEntryPanel.getInstance()
-    panel.deactivate(true, resetCaret)
-  }
-
-  public override fun startFilterCommand(editor: VimEditor, context: ExecutionContext, cmd: Command) {
-    val initText = getRange(editor, cmd) + "!"
-    val currentMode = editor.mode
-    check(currentMode is ReturnableFromCmd) { "Cannot enable cmd mode from $currentMode" }
-    editor.mode = Mode.CMD_LINE(currentMode)
-    val panel = ExEntryPanel.getInstance()
-    panel.activate(editor.ij, context.ij, ":", initText, 1)
-  }
-
-  private fun getRange(editor: VimEditor, cmd: Command): String {
-    var initText = ""
-    if (editor.vimStateMachine.mode is VISUAL) {
-      initText = "'<,'>"
-    } else if (cmd.rawCount > 0) {
-      initText = if (cmd.count == 1) {
-        "."
-      } else {
-        ".,.+" + (cmd.count - 1)
-      }
-    }
-
-    return initText
-  }
-
+class ProcessGroup : VimProcessGroupBase() {
   @Throws(ExecutionException::class, ProcessCanceledException::class)
-  public override fun executeCommand(
+  override fun executeCommand(
     editor: VimEditor,
     command: String,
     input: CharSequence?,
-    currentDirectoryPath: String?
+    currentDirectoryPath: String?,
   ): String? {
     // This is a much simplified version of how Vim does this. We're using stdin/stdout directly, while Vim will
     // redirect to temp files ('shellredir' and 'shelltemp') or use pipes. We don't support 'shellquote', because we're
@@ -248,8 +95,6 @@ public class ProcessGroup : VimProcessGroupBase() {
         val progressIndicator = ProgressIndicatorProvider.getInstance().progressIndicator
         val output = handler.runProcessWithProgressIndicator(progressIndicator)
 
-        lastCommand = command
-
         if (output.isCancelled) {
           // TODO: Vim will use whatever text has already been written to stdout
           // For whatever reason, we're not getting any here, so just throw an exception
@@ -285,7 +130,7 @@ public class ProcessGroup : VimProcessGroupBase() {
     }
   }
 
-  public companion object {
+  companion object {
     private val logger = logger<ProcessGroup>()
   }
 }

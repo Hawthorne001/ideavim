@@ -15,7 +15,7 @@ import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.ImmutableVimCaret
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
-import com.maddyhome.idea.vim.command.Argument
+import com.maddyhome.idea.vim.command.MappingMode
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.common.argumentCaptured
 import com.maddyhome.idea.vim.diagnostic.trace
@@ -23,9 +23,9 @@ import com.maddyhome.idea.vim.diagnostic.vimLogger
 import com.maddyhome.idea.vim.extension.ExtensionHandler
 import com.maddyhome.idea.vim.group.visual.VimSelection
 import com.maddyhome.idea.vim.group.visual.VimSelection.Companion.create
+import com.maddyhome.idea.vim.handler.ExternalActionHandler
 import com.maddyhome.idea.vim.helper.VimNlsSafe
 import com.maddyhome.idea.vim.state.KeyHandlerState
-import com.maddyhome.idea.vim.state.VimStateMachine
 import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.SelectionType.CHARACTER_WISE
 import com.maddyhome.idea.vim.state.mode.selectionType
@@ -38,10 +38,11 @@ import kotlin.math.min
 /**
  * @author vlan
  */
-public sealed class MappingInfo(
-  public val fromKeys: List<KeyStroke>,
-  public val isRecursive: Boolean,
-  public val owner: MappingOwner,
+sealed class MappingInfo(
+  val fromKeys: List<KeyStroke>,
+  val isRecursive: Boolean,
+  val owner: MappingOwner,
+  val originalModes: Set<MappingMode>,
 ) : Comparable<MappingInfo>, MappingInfoLayer {
 
   @VimNlsSafe
@@ -68,6 +69,7 @@ public sealed class MappingInfo(
         val keyCodeDiff = key1.keyCode - key2.keyCode
         if (keyCodeDiff != 0) keyCodeDiff else key1.modifiers - key2.modifiers
       }
+
       c1 == KeyEvent.CHAR_UNDEFINED -> -1
       c2 == KeyEvent.CHAR_UNDEFINED -> 1
       else -> c1 - c2
@@ -75,17 +77,17 @@ public sealed class MappingInfo(
   }
 }
 
-public class ToKeysMappingInfo(
-  public val toKeys: List<KeyStroke>,
+class ToKeysMappingInfo(
+  val toKeys: List<KeyStroke>,
   fromKeys: List<KeyStroke>,
   isRecursive: Boolean,
   owner: MappingOwner,
-) : MappingInfo(fromKeys, isRecursive, owner) {
+  originalModes: Set<MappingMode>,
+) : MappingInfo(fromKeys, isRecursive, owner, originalModes) {
   override fun getPresentableString(): String = injector.parser.toKeyNotation(toKeys)
 
   override fun execute(editor: VimEditor, context: ExecutionContext, keyState: KeyHandlerState) {
     LOG.debug("Executing 'ToKeys' mapping info...")
-    val editorDataContext = injector.executionContextManager.onEditor(editor, context)
     val fromIsPrefix = KeyHandler.isPrefix(fromKeys, toKeys)
     val keyHandler = KeyHandler.getInstance()
     LOG.trace { "Adding new keys to keyStack as toKeys of mapping. State before adding keys: ${keyHandler.keyStack.dump()}" }
@@ -95,7 +97,7 @@ public class ToKeysMappingInfo(
       while (keyHandler.keyStack.hasStroke()) {
         val keyStroke = keyHandler.keyStack.feedStroke()
         val recursive = isRecursive && !(first && fromIsPrefix)
-        keyHandler.handleKey(editor, keyStroke, editorDataContext, recursive, false, keyState)
+        keyHandler.handleKey(editor, keyStroke, context, recursive, false, keyState)
         first = false
       }
     } finally {
@@ -107,55 +109,54 @@ public class ToKeysMappingInfo(
     return "Mapping[$fromKeys -> $toKeys]"
   }
 
-  public companion object {
+  companion object {
     private val LOG = vimLogger<ToKeysMappingInfo>()
   }
 }
 
-public class ToExpressionMappingInfo(
+class ToExpressionMappingInfo(
   private val toExpression: Expression,
   fromKeys: List<KeyStroke>,
   isRecursive: Boolean,
   owner: MappingOwner,
+  originalModes: Set<MappingMode>,
   private val originalString: String,
-) : MappingInfo(fromKeys, isRecursive, owner) {
+) : MappingInfo(fromKeys, isRecursive, owner, originalModes) {
   override fun getPresentableString(): String = originalString
 
   override fun execute(editor: VimEditor, context: ExecutionContext, keyState: KeyHandlerState) {
     LOG.debug("Executing 'ToExpression' mapping info...")
-    val editorDataContext = injector.executionContextManager.onEditor(editor, context)
     val toKeys = injector.parser.parseKeys(toExpression.evaluate(editor, context, CommandLineVimLContext).toString())
     val fromIsPrefix = KeyHandler.isPrefix(fromKeys, toKeys)
     var first = true
     for (keyStroke in toKeys) {
       val recursive = isRecursive && !(first && fromIsPrefix)
       val keyHandler = KeyHandler.getInstance()
-      keyHandler.handleKey(editor, keyStroke, editorDataContext, recursive, false, keyState)
+      keyHandler.handleKey(editor, keyStroke, context, recursive, false, keyState)
       first = false
     }
   }
 
-  public companion object {
+  companion object {
     private val LOG = vimLogger<ToExpressionMappingInfo>()
   }
 }
 
-public class ToHandlerMappingInfo(
+class ToHandlerMappingInfo(
   private val extensionHandler: ExtensionHandler,
   fromKeys: List<KeyStroke>,
   isRecursive: Boolean,
   owner: MappingOwner,
-) : MappingInfo(fromKeys, isRecursive, owner) {
+  originalModes: Set<MappingMode>,
+) : MappingInfo(fromKeys, isRecursive, owner, originalModes) {
   override fun getPresentableString(): String = "call ${extensionHandler.javaClass.canonicalName}"
 
   override fun execute(editor: VimEditor, context: ExecutionContext, keyState: KeyHandlerState) {
     LOG.debug("Executing 'ToHandler' mapping info...")
-    val vimStateMachine = VimStateMachine.getInstance(editor)
 
     // Cache isOperatorPending in case the extension changes the mode while moving the caret
     // See CommonExtensionTest
-    // TODO: Is this legal? Should we assert in this case?
-    val shouldCalculateOffsets: Boolean = vimStateMachine.isOperatorPending(editor.mode)
+    val shouldCalculateOffsets: Boolean = editor.mode is Mode.OP_PENDING
 
     val startOffsets: Map<ImmutableVimCaret, Int> = editor.carets().associateWith { it.offset }
 
@@ -175,7 +176,7 @@ public class ToHandlerMappingInfo(
               editor,
               context,
               null,
-              KeyHandler.MutableBoolean(false),
+              false,
               keyState,
             )
           }
@@ -183,8 +184,8 @@ public class ToHandlerMappingInfo(
       }
     }
 
-    val operatorArguments = OperatorArguments(vimStateMachine.isOperatorPending(editor.mode), keyState.commandBuilder.count, vimStateMachine.mode)
-    val register = keyState.commandBuilder.register
+    val operatorArguments = OperatorArguments(keyState.commandBuilder.calculateCount0Snapshot(), editor.mode)
+    val register = keyState.commandBuilder.registerSnapshot
     if (register != null) {
       injector.registerGroup.selectRegister(register)
     }
@@ -206,7 +207,7 @@ public class ToHandlerMappingInfo(
     }
   }
 
-  public companion object {
+  companion object {
     private val LOG = vimLogger<ToHandlerMappingInfo>()
 
     private fun myFun(
@@ -241,29 +242,28 @@ public class ToHandlerMappingInfo(
           }
         }
         if (offsets.isNotEmpty()) {
-          keyState.commandBuilder.completeCommandPart(Argument(offsets))
+          keyState.commandBuilder.addAction(ExternalActionHandler(offsets))
         }
       }
     }
   }
 }
 
-public class ToActionMappingInfo(
-  public val action: String,
+class ToActionMappingInfo(
+  val action: String,
   fromKeys: List<KeyStroke>,
   isRecursive: Boolean,
   owner: MappingOwner,
-) : MappingInfo(fromKeys, isRecursive, owner) {
+  originalModes: Set<MappingMode>,
+) : MappingInfo(fromKeys, isRecursive, owner, originalModes) {
   override fun getPresentableString(): String = "action $action"
 
   override fun execute(editor: VimEditor, context: ExecutionContext, keyState: KeyHandlerState) {
     LOG.debug("Executing 'ToAction' mapping...")
-    val editorDataContext = injector.executionContextManager.onEditor(editor, context)
-    val dataContext = injector.executionContextManager.onCaret(editor.currentCaret(), editorDataContext)
-    injector.actionExecutor.executeAction(action, dataContext)
+    injector.actionExecutor.executeAction(editor, name = action, context = context)
   }
 
-  public companion object {
+  companion object {
     private val LOG = vimLogger<ToActionMappingInfo>()
   }
 }

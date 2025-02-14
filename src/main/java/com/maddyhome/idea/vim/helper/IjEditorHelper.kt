@@ -13,24 +13,21 @@ import com.intellij.openapi.editor.ReadOnlyFragmentModificationException
 import com.intellij.openapi.editor.VisualPosition
 import com.intellij.openapi.editor.actionSystem.EditorActionManager
 import com.intellij.openapi.editor.ex.util.EditorUtil
-import com.maddyhome.idea.vim.api.EngineEditorHelper
-import com.maddyhome.idea.vim.api.ExecutionContext
+import com.maddyhome.idea.vim.api.EngineEditorHelperBase
 import com.maddyhome.idea.vim.api.VimEditor
+import com.maddyhome.idea.vim.api.VimRangeMarker
 import com.maddyhome.idea.vim.api.VimVisualPosition
 import com.maddyhome.idea.vim.newapi.IjVimEditor
 import com.maddyhome.idea.vim.newapi.ij
 import com.maddyhome.idea.vim.newapi.vim
 
 @Service
-internal class IjEditorHelper : EngineEditorHelper {
+internal class IjEditorHelper : EngineEditorHelperBase() {
   override fun amountOfInlaysBeforeVisualPosition(editor: VimEditor, pos: VimVisualPosition): Int {
-    return (editor as IjVimEditor).editor.amountOfInlaysBeforeVisualPosition(
-      VisualPosition(
-        pos.line,
-        pos.column,
-        pos.leansRight,
-      ),
-    )
+    require(pos.line >= 0)
+    require(pos.column >= 0)
+    val visualPosition = VisualPosition(pos.line, pos.column, pos.leansRight)
+    return (editor as IjVimEditor).editor.amountOfInlaysBeforeVisualPosition(visualPosition)
   }
 
   override fun getVisualLineAtTopOfScreen(editor: VimEditor): Int {
@@ -39,6 +36,10 @@ internal class IjEditorHelper : EngineEditorHelper {
 
   override fun getApproximateScreenWidth(editor: VimEditor): Int {
     return EditorHelper.getApproximateScreenWidth(editor.ij)
+  }
+
+  override fun getApproximateOutputPanelWidth(editor: VimEditor): Int {
+    return EditorHelper.getApproximateOutputPanelWidth(editor.ij)
   }
 
   override fun handleWithReadonlyFragmentModificationHandler(editor: VimEditor, exception: Exception) {
@@ -51,11 +52,23 @@ internal class IjEditorHelper : EngineEditorHelper {
     return EditorHelper.getVisualLineAtBottomOfScreen(editor.ij)
   }
 
-  override fun pad(editor: VimEditor, context: ExecutionContext, line: Int, to: Int): String {
-    return EditorHelper.pad(editor.ij, context.ij, line, to)
-  }
-
   override fun inlayAwareOffsetToVisualPosition(editor: VimEditor, offset: Int): VimVisualPosition {
     return EditorUtil.inlayAwareOffsetToVisualPosition(editor.ij, offset).vim
+  }
+
+  override fun createRangeMarker(editor: VimEditor, startOffset: Int, endOffset: Int): VimRangeMarker {
+    val ijRangeMarker = editor.ij.document.createRangeMarker(startOffset, endOffset)
+    return object : VimRangeMarker {
+      override val startOffset: Int
+        get() = ijRangeMarker.startOffset
+      override val endOffset: Int
+        get() = ijRangeMarker.endOffset
+      override val isValid: Boolean
+        get() = ijRangeMarker.isValid
+
+      override fun dispose() {
+        ijRangeMarker.dispose()
+      }
+    }
   }
 }

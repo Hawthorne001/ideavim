@@ -15,12 +15,12 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.api.options
 import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.handler.VimActionHandler
 import com.maddyhome.idea.vim.options.OptionConstants
+import com.maddyhome.idea.vim.state.mode.SelectionType
 
 @CommandOrMotion(keys = ["v"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class VisualToggleCharacterModeAction : VimActionHandler.SingleExecution() {
+class VisualToggleCharacterModeAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
   override fun execute(
@@ -32,8 +32,7 @@ public class VisualToggleCharacterModeAction : VimActionHandler.SingleExecution(
     return if (injector.options(editor).selectmode.contains(OptionConstants.selectmode_cmd)) {
       injector.visualMotionGroup.enterSelectMode(editor, SelectionType.CHARACTER_WISE)
     } else {
-      injector.visualMotionGroup
-        .toggleVisual(editor, cmd.count, cmd.rawCount, SelectionType.CHARACTER_WISE)
+      injector.visualMotionGroup.toggleVisual(editor, cmd.count, cmd.rawCount, SelectionType.CHARACTER_WISE)
     }
   }
 }

@@ -21,11 +21,12 @@ import com.intellij.openapi.util.UserDataHolder
 import com.maddyhome.idea.vim.api.CaretRegisterStorageBase
 import com.maddyhome.idea.vim.api.LocalMarkStorage
 import com.maddyhome.idea.vim.api.SelectionInfo
+import com.maddyhome.idea.vim.common.InsertSequence
+import com.maddyhome.idea.vim.common.VimEditorReplaceMask
 import com.maddyhome.idea.vim.ex.ExOutputModel
 import com.maddyhome.idea.vim.group.visual.VisualChange
 import com.maddyhome.idea.vim.group.visual.vimLeadSelectionOffset
 import com.maddyhome.idea.vim.newapi.vim
-import com.maddyhome.idea.vim.state.VimStateMachine
 import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.ui.ExOutputPanel
@@ -44,7 +45,7 @@ import kotlin.reflect.KProperty
 /**
  * Caret's offset when entering visual mode
  */
-public var Caret.vimSelectionStart: Int
+var Caret.vimSelectionStart: Int
   get() {
     val selectionStart = _vimSelectionStart
     if (selectionStart == null) {
@@ -80,9 +81,11 @@ internal var Caret.vimLastColumn: Int
     _vimLastColumn = value
     _vimLastColumnPos = visualPosition
   }
+
 internal fun Caret.resetVimLastColumn() {
   _vimLastColumnPos = null
 }
+
 private var Caret._vimLastColumn: Int by userDataCaretToEditorOr { (this as Caret).inlayAwareVisualColumn }
 private var Caret._vimLastColumnPos: VisualPosition? by userDataCaretToEditor()
 
@@ -104,7 +107,6 @@ internal var Editor.vimInitialised: Boolean by userDataOr { false }
 // ------------------ Editor
 internal fun unInitializeEditor(editor: Editor) {
   editor.vimLastSelectionType = null
-  editor.vimStateMachine = null
   editor.vimMorePanel = null
   editor.vimExOutput = null
   editor.vimLastHighlighters = null
@@ -119,15 +121,17 @@ internal var Editor.vimIncsearchCurrentMatchOffset: Int? by userData()
  * @see :help visualmode()
  */
 internal var Editor.vimLastSelectionType: SelectionType? by userData()
-internal var Editor.vimStateMachine: VimStateMachine? by userData()
 internal var Editor.vimEditorGroup: Boolean by userDataOr { false }
-internal var Editor.vimLineNumbersInitialState: Boolean by userDataOr { false }
 internal var Editor.vimHasRelativeLineNumbersInstalled: Boolean by userDataOr { false }
 internal var Editor.vimMorePanel: ExOutputPanel? by userData()
 internal var Editor.vimExOutput: ExOutputModel? by userData()
 internal var Editor.vimTestInputModel: TestInputModel? by userData()
 
 internal var Editor.vimChangeActionSwitchMode: Mode? by userData()
+internal var Editor.replaceMask: VimEditorReplaceMask? by userData()
+
+internal var Caret.currentInsert: InsertSequence? by userData()
+internal val Caret.insertHistory: MutableList<InsertSequence> by userDataOr { mutableListOf() }
 
 /**
  * Function for delegated properties.

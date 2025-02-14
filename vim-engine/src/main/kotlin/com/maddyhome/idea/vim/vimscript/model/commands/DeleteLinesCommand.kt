@@ -14,16 +14,20 @@ import com.maddyhome.idea.vim.api.VimCaret
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
+import com.maddyhome.idea.vim.ex.ranges.Range
+import com.maddyhome.idea.vim.ex.ranges.toTextRange
 import com.maddyhome.idea.vim.state.mode.SelectionType
-import com.maddyhome.idea.vim.ex.ranges.Ranges
 import com.maddyhome.idea.vim.vimscript.model.ExecutionResult
 
 /**
  * see "h :delete"
  */
 @ExCommand(command = "d[elete]")
-public data class DeleteLinesCommand(val ranges: Ranges, var argument: String) : Command.ForEachCaret(ranges, argument) {
-  override val argFlags: CommandHandlerFlags = flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.WRITABLE)
+data class DeleteLinesCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.ForEachCaret(range, modifier, argument) {
+
+  override val argFlags: CommandHandlerFlags =
+    flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.WRITABLE)
 
   override fun processCommand(
     editor: VimEditor,
@@ -31,20 +35,11 @@ public data class DeleteLinesCommand(val ranges: Ranges, var argument: String) :
     context: ExecutionContext,
     operatorArguments: OperatorArguments,
   ): ExecutionResult {
-    val argument = this.argument
-    val register = if (argument.isNotEmpty() && !argument[0].isDigit()) {
-      this.argument = argument.substring(1)
-      argument[0]
-    } else {
-      injector.registerGroup.defaultRegister
-    }
-
+    val register = consumeRegisterFromArgument()
     if (!injector.registerGroup.selectRegister(register)) return ExecutionResult.Error
 
-    val textRange = getTextRange(editor, caret, true)
-    return if (injector.changeGroup
-        .deleteRange(editor, caret, textRange, SelectionType.LINE_WISE, false, operatorArguments)
-    ) {
+    val textRange = getLineRangeWithCount(editor, caret).toTextRange(editor)
+    return if (injector.changeGroup.deleteRange(editor, context, caret, textRange, SelectionType.LINE_WISE, false)) {
       ExecutionResult.Success
     } else {
       ExecutionResult.Error

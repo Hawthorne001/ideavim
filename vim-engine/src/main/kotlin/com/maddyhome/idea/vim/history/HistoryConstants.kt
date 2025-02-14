@@ -8,16 +8,17 @@
 
 package com.maddyhome.idea.vim.history
 
-public object HistoryConstants {
+@Deprecated("Please use VimHistory.Type")
+object HistoryConstants {
   @JvmField
-  public val SEARCH: String = "search"
+  val SEARCH: String = "search"
 
   @JvmField
-  public val COMMAND: String = "cmd"
+  val COMMAND: String = "cmd"
 
   @JvmField
-  public val EXPRESSION: String = "expr"
+  val EXPRESSION: String = "expr"
 
   @JvmField
-  public val INPUT: String = "input"
+  val INPUT: String = "input"
 }

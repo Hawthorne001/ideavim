@@ -16,6 +16,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.maddyhome.idea.vim.VimPlugin;
 import com.maddyhome.idea.vim.history.HistoryBlock;
 import com.maddyhome.idea.vim.history.HistoryEntry;
+import com.maddyhome.idea.vim.history.VimHistory;
 import com.maddyhome.idea.vim.history.VimHistoryBase;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
@@ -27,29 +28,27 @@ import java.util.List;
 import static com.maddyhome.idea.vim.history.HistoryConstants.*;
 
 @State(name = "VimHistorySettings", storages = {
-  @Storage(value = "$APP_CONFIG$/vim_settings_local.xml", roamingType = RoamingType.DISABLED)
-})
+  @Storage(value = "$APP_CONFIG$/vim_settings_local.xml", roamingType = RoamingType.DISABLED)})
 public class HistoryGroup extends VimHistoryBase implements PersistentStateComponent<Element> {
 
   public void saveData(@NotNull Element element) {
     logger.debug("saveData");
     Element hist = new Element("history");
 
-    saveData(hist, SEARCH);
-    saveData(hist, COMMAND);
-    saveData(hist, EXPRESSION);
-    saveData(hist, INPUT);
+    for (Type type : getHistories().keySet()) {
+      saveData(hist, type);
+    }
 
     element.addContent(hist);
   }
 
-  private void saveData(@NotNull Element element, String key) {
-    final HistoryBlock block = getHistories().get(key);
+  private void saveData(@NotNull Element element, VimHistory.Type type) {
+    final HistoryBlock block = getHistories().get(type);
     if (block == null) {
       return;
     }
 
-    final Element root = new Element("history-" + key);
+    final Element root = new Element("history-" + typeToKey(type));
 
     for (HistoryEntry entry : block.getEntries()) {
       final Element entryElement = new Element("entry");
@@ -67,10 +66,10 @@ public class HistoryGroup extends VimHistoryBase implements PersistentStateCompo
       return;
     }
 
-    readData(hist, SEARCH);
-    readData(hist, COMMAND);
-    readData(hist, EXPRESSION);
-    readData(hist, INPUT);
+    for (Element child : hist.getChildren()) {
+      String key = child.getName().replace("history-", "");
+      readData(hist, key);
+    }
   }
 
   private void readData(@NotNull Element element, String key) {
@@ -80,7 +79,7 @@ public class HistoryGroup extends VimHistoryBase implements PersistentStateCompo
     }
 
     block = new HistoryBlock();
-    getHistories().put(key, block);
+    getHistories().put(getTypeForString(key), block);
 
     final Element root = element.getChild("history-" + key);
     if (root != null) {
@@ -92,6 +91,25 @@ public class HistoryGroup extends VimHistoryBase implements PersistentStateCompo
         }
       }
     }
+  }
+
+  private String typeToKey(VimHistory.Type type) {
+    if (type instanceof VimHistory.Type.Search) {
+      return SEARCH;
+    }
+    if (type instanceof VimHistory.Type.Command) {
+      return COMMAND;
+    }
+    if (type instanceof VimHistory.Type.Expression) {
+      return EXPRESSION;
+    }
+    if (type instanceof VimHistory.Type.Input) {
+      return INPUT;
+    }
+    if (type instanceof VimHistory.Type.Custom) {
+      return ((Type.Custom)type).getId();
+    }
+    return "unreachable";
   }
 
   @Nullable

@@ -9,6 +9,7 @@
 package com.maddyhome.idea.vim.options.helpers
 
 import com.maddyhome.idea.vim.api.Options
+import com.maddyhome.idea.vim.api.globalOptions
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.ex.exExceptionMessage
 import com.maddyhome.idea.vim.helper.enumSetOf
@@ -16,8 +17,8 @@ import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.vimscript.model.datatypes.VimString
 import java.util.*
 
-public object GuiCursorOptionHelper {
-  public fun convertToken(token: String): GuiCursorEntry {
+object GuiCursorOptionHelper {
+  fun convertToken(token: String): GuiCursorEntry {
     val split = token.split(':')
     if (split.size == 1) {
       throw exExceptionMessage("E545", token)
@@ -50,6 +51,7 @@ public object GuiCursorOptionHelper {
             throw exExceptionMessage("E549", token)
           }
         }
+
         it.startsWith("hor") -> {
           type = GuiCursorType.HOR
           thickness = it.slice(3 until it.length).toIntOrNull() ?: throw exExceptionMessage("E548", token)
@@ -57,15 +59,18 @@ public object GuiCursorOptionHelper {
             throw exExceptionMessage("E549", token)
           }
         }
+
         it.startsWith("blink") -> {
           // We don't do anything with blink...
           blinkModes.add(it)
         }
+
         it.contains('/') -> {
           val i = it.indexOf('/')
           highlightGroup = it.slice(0 until i)
           lmapHighlightGroup = it.slice(i + 1 until it.length)
         }
+
         else -> highlightGroup = it
       }
     }
@@ -73,9 +78,13 @@ public object GuiCursorOptionHelper {
     return GuiCursorEntry(modes, type, thickness, highlightGroup, lmapHighlightGroup, blinkModes)
   }
 
-  public fun getAttributes(mode: GuiCursorMode): GuiCursorAttributes {
+  fun getAttributes(mode: GuiCursorMode): GuiCursorAttributes {
     val attributes = injector.optionGroup.getParsedEffectiveOptionValue(Options.guicursor, null, ::parseGuicursor)
-    return attributes[mode] ?: GuiCursorAttributes.DEFAULT
+
+    // `ve` falls back to `v` if not specified
+    return attributes[mode]
+      ?: (if (mode == GuiCursorMode.VISUAL_EXCLUSIVE) attributes[GuiCursorMode.VISUAL] else null)
+      ?: GuiCursorAttributes.DEFAULT
   }
 
   private fun parseGuicursor(guicursor: VimString) = GuiCursorAttributeBuilders().also { builders ->
@@ -137,7 +146,7 @@ public object GuiCursorOptionHelper {
   }
 }
 
-public enum class GuiCursorMode(public val token: String) {
+enum class GuiCursorMode(val token: String) {
   NORMAL("n"),
   VISUAL("v"),
   VISUAL_EXCLUSIVE("ve"),
@@ -151,29 +160,32 @@ public enum class GuiCursorMode(public val token: String) {
   ALL("a"),
   ;
 
-  public override fun toString(): String = token
+  override fun toString(): String = token
 
-  public companion object {
-    public fun fromString(s: String): GuiCursorMode? = entries.firstOrNull { it.token == s }
+  companion object {
+    fun fromString(s: String): GuiCursorMode? = entries.firstOrNull { it.token == s }
 
     // Also used in FleetVim as direct call
-    public fun fromMode(mode: Mode, isReplaceCharacter: Boolean): GuiCursorMode {
+    fun fromMode(mode: Mode, isReplaceCharacter: Boolean): GuiCursorMode {
       if (isReplaceCharacter) {
         // Can be true for NORMAL and VISUAL
         return REPLACE
       }
 
-      // Note that Vim does not change the caret for SELECT mode and continues to use VISUAL or VISUAL_EXCLUSIVE. IdeaVim
-      // makes much more use of SELECT than Vim does (e.g. it's the default for idearefactormode) so it makes sense for us
-      // to more visually distinguish VISUAL and SELECT. So we use INSERT; a selection and the insert caret is intuitively
-      // the same as SELECT
+      // TODO: SELECT should behave the same as VISUAL
+      // Note that IdeaVim incorrectly treats Select mode as exclusive at all times, regardless of the 'selection'
+      // option. Previously, we would use the Insert cursor to try to make Select mode feel more intuitive, like a
+      // "traditional" Windows-like selection, especially with 'idearefactormode' defaults and live template fields
+      // during a refactoring. However, at some point, we need to fix the exclusive/inclusive nature, and then the caret
+      // shape will be more important - if the selection is inclusive, a bar caret on the last (selected) character will
+      // look weird
       return when (mode) {
         is Mode.NORMAL -> NORMAL
         is Mode.OP_PENDING -> OP_PENDING
         Mode.INSERT -> INSERT
         Mode.REPLACE -> REPLACE
-        is Mode.SELECT -> INSERT
-        is Mode.VISUAL -> VISUAL // TODO: VISUAL_EXCLUSIVE
+        is Mode.SELECT -> VISUAL_EXCLUSIVE  // TODO: Should match VISUAL
+        is Mode.VISUAL -> if (injector.globalOptions().selection == "exclusive") VISUAL_EXCLUSIVE else VISUAL
         // This doesn't handle ci and cr, but we don't care - our CMD_LINE will never call this
         is Mode.CMD_LINE -> CMD_LINE
       }
@@ -181,30 +193,31 @@ public enum class GuiCursorMode(public val token: String) {
   }
 }
 
-public enum class GuiCursorType(public val token: String) {
+enum class GuiCursorType(val token: String) {
   BLOCK("block"),
   VER("ver"),
   HOR("hor"),
 }
 
-public class GuiCursorEntry(
-  public val modes: EnumSet<GuiCursorMode>,
-  public val type: GuiCursorType?,
-  public val thickness: Int?,
-  public val highlightGroup: String,
-  public val lmapHighlightGroup: String,
-  public val blinkModes: List<String>,
+class GuiCursorEntry(
+  val modes: EnumSet<GuiCursorMode>,
+  val type: GuiCursorType?,
+  val thickness: Int?,
+  val highlightGroup: String,
+  val lmapHighlightGroup: String,
+  val blinkModes: List<String>,
 )
 
-public data class GuiCursorAttributes(
+data class GuiCursorAttributes(
   val type: GuiCursorType,
   val thickness: Int,
   val highlightGroup: String,
   val lmapHighlightGroup: String,
   val blinkModes: List<String>,
 ) {
-  public companion object {
-    public val DEFAULT: GuiCursorAttributes = GuiCursorAttributes(GuiCursorType.BLOCK,
+  companion object {
+    val DEFAULT: GuiCursorAttributes = GuiCursorAttributes(
+      GuiCursorType.BLOCK,
       thickness = 0,
       highlightGroup = "",
       lmapHighlightGroup = "",
@@ -212,4 +225,3 @@ public data class GuiCursorAttributes(
     )
   }
 }
-

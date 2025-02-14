@@ -7,28 +7,39 @@
  */
 package org.jetbrains.plugins.ideavim
 
+import com.intellij.application.options.CodeStyle
 import com.intellij.ide.ClipboardSynchronizer
 import com.intellij.ide.bookmark.BookmarksManager
 import com.intellij.ide.highlighter.XmlFileType
 import com.intellij.json.JsonFileType
+import com.intellij.lang.Language
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.actionSystem.PlatformCoreDataKeys
 import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.CaretVisualAttributes
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.EditorSettings
 import com.intellij.openapi.editor.Inlay
 import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.editor.VisualPosition
 import com.intellij.openapi.editor.colors.EditorColors
+import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.ex.EditorEx
+import com.intellij.openapi.editor.ex.EditorSettingsExternalizable
+import com.intellij.openapi.editor.ex.util.EditorUtil
+import com.intellij.openapi.editor.markup.EffectType
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.project.Project
+import com.intellij.psi.codeStyle.CommonCodeStyleSettings
 import com.intellij.testFramework.EditorTestUtil
 import com.intellij.testFramework.LightProjectDescriptor
 import com.intellij.testFramework.PlatformTestUtil
@@ -42,6 +53,8 @@ import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.action.VimShortcutKeyAction
 import com.maddyhome.idea.vim.api.EffectiveOptions
 import com.maddyhome.idea.vim.api.GlobalOptions
+import com.maddyhome.idea.vim.api.Options
+import com.maddyhome.idea.vim.api.VimDigraphGroupBase
 import com.maddyhome.idea.vim.api.VimOptionGroup
 import com.maddyhome.idea.vim.api.globalOptions
 import com.maddyhome.idea.vim.api.injector
@@ -50,9 +63,10 @@ import com.maddyhome.idea.vim.api.setToggleOption
 import com.maddyhome.idea.vim.api.visualLineToBufferLine
 import com.maddyhome.idea.vim.command.MappingMode
 import com.maddyhome.idea.vim.ex.ExException
-import com.maddyhome.idea.vim.ex.ExOutputModel.Companion.getInstance
+import com.maddyhome.idea.vim.ex.ExOutputModel
 import com.maddyhome.idea.vim.group.EffectiveIjOptions
 import com.maddyhome.idea.vim.group.GlobalIjOptions
+import com.maddyhome.idea.vim.group.IjOptions
 import com.maddyhome.idea.vim.group.visual.VimVisualTimer.swingTimer
 import com.maddyhome.idea.vim.handler.isOctopusEnabled
 import com.maddyhome.idea.vim.helper.EditorHelper
@@ -62,9 +76,9 @@ import com.maddyhome.idea.vim.helper.getGuiCursorMode
 import com.maddyhome.idea.vim.key.MappingOwner
 import com.maddyhome.idea.vim.key.ToKeysMappingInfo
 import com.maddyhome.idea.vim.listener.SelectionVimListenerSuppressor
+import com.maddyhome.idea.vim.listener.VimListenerManager
 import com.maddyhome.idea.vim.newapi.IjVimEditor
 import com.maddyhome.idea.vim.newapi.globalIjOptions
-import com.maddyhome.idea.vim.newapi.ij
 import com.maddyhome.idea.vim.newapi.ijOptions
 import com.maddyhome.idea.vim.newapi.vim
 import com.maddyhome.idea.vim.options.OptionAccessScope
@@ -79,7 +93,6 @@ import com.maddyhome.idea.vim.vimscript.model.datatypes.VimFuncref
 import com.maddyhome.idea.vim.vimscript.parser.errors.IdeavimErrorListener
 import org.jetbrains.annotations.ApiStatus
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.TestInfo
 import org.junit.jupiter.api.assertThrows
@@ -102,7 +115,40 @@ import kotlin.test.assertTrue
  */
 @RunInEdt(writeIntent = true)
 @ApiStatus.Internal
-abstract class VimTestCase {
+abstract class VimTestCase : VimNoWriteActionTestCase() {
+  object Checks {
+    var caretShape: Boolean = true
+
+    val neoVim = NeoVim()
+
+    var keyHandler = KeyHandlerMethod.VIA_IDE
+
+    fun reset() {
+      caretShape = true
+
+      neoVim.reset()
+      keyHandler = KeyHandlerMethod.VIA_IDE
+    }
+
+    class NeoVim {
+      var ignoredRegisters: Set<Char> = setOf()
+      var exitOnTearDown = true
+
+      fun reset() {
+        ignoredRegisters = setOf()
+        exitOnTearDown = true
+      }
+    }
+
+    enum class KeyHandlerMethod {
+      VIA_IDE,
+      DIRECT_TO_VIM,
+    }
+  }
+}
+
+@ApiStatus.Internal
+abstract class VimNoWriteActionTestCase {
   protected lateinit var fixture: CodeInsightTestFixture
 
   lateinit var testInfo: TestInfo
@@ -119,12 +165,13 @@ abstract class VimTestCase {
       KeyHandler.getInstance().fullReset(editor.vim)
     }
     KeyHandler.getInstance().keyHandlerState.reset(Mode.NORMAL())
-    VimPlugin.getOptionGroup().resetAllOptionsForTesting()
+    injector.vimState.reset()
+    resetAllOptions()
     VimPlugin.getKey().resetKeyMappings()
     VimPlugin.getSearch().resetState()
     if (VimPlugin.isNotEnabled()) VimPlugin.setEnabled(true)
     injector.globalOptions().ideastrictmode = true
-    Checks.reset()
+    VimTestCase.Checks.reset()
     clearClipboard()
 
     // Make sure the entry text field gets a bounds, or we won't be able to work out caret location
@@ -132,9 +179,50 @@ abstract class VimTestCase {
 
     NeovimTesting.setUp(testInfo)
 
-    VimPlugin.clearError()
+    injector.messages.clearError()
+    injector.messages.clearStatusBarMessage()
 
     this.testInfo = testInfo
+  }
+
+  private fun resetAllOptions() {
+    // Some options are mapped to IntelliJ settings. Make sure the IntelliJ settings match the Vim defaults
+    EditorSettingsExternalizable.getInstance().apply {
+      isUseCustomSoftWrapIndent = IjOptions.breakindent.defaultValue.asBoolean()
+      isRightMarginShown = false  // Otherwise we get `colorcolumn=+0`
+      isWhitespacesShown = IjOptions.list.defaultValue.asBoolean()
+      isLineNumbersShown = Options.number.defaultValue.asBoolean()
+      lineNumeration = if (IjOptions.relativenumber.defaultValue.asBoolean()) {
+        if (isLineNumbersShown) EditorSettings.LineNumerationType.HYBRID else EditorSettings.LineNumerationType.RELATIVE
+      } else {
+        EditorSettings.LineNumerationType.ABSOLUTE
+      }
+      softWrapFileMasks = "*"
+      isUseSoftWraps = IjOptions.wrap.defaultValue.asBoolean()
+
+      verticalScrollJump = Options.scrolljump.defaultValue.value
+      verticalScrollOffset = Options.scrolloff.defaultValue.value
+      horizontalScrollJump = Options.sidescroll.defaultValue.value
+      horizontalScrollOffset = Options.sidescrolloff.defaultValue.value
+    }
+
+    CodeStyle.getDefaultSettings().getCommonSettings(null as Language?).apply {
+      RIGHT_MARGIN = IjOptions.textwidth.defaultValue.value
+      WRAP_ON_TYPING = if (IjOptions.textwidth.defaultValue > 0) {
+        CommonCodeStyleSettings.WrapOnTyping.WRAP.intValue
+      } else {
+        CommonCodeStyleSettings.WrapOnTyping.NO_WRAP.intValue
+      }
+    }
+
+    // Reset the Vim options. Important to do this after changing the IntelliJ settings, so that IdeaVim will treat
+    // these values as defaults.
+    VimPlugin.getOptionGroup().resetAllOptionsForTesting()
+  }
+
+  private fun setDefaultIntelliJSettings(editor: Editor) {
+    // These settings don't have a global setting...
+    editor.settings.isCaretRowShown = IjOptions.cursorline.defaultValue.asBoolean()
   }
 
   protected open fun createFixture(factory: IdeaTestFixtureFactory): CodeInsightTestFixture {
@@ -157,7 +245,7 @@ abstract class VimTestCase {
     bookmarksManager?.bookmarks?.forEach { bookmark ->
       bookmarksManager.remove(bookmark)
     }
-    fixture.editor?.let { injector.messages.showStatusBarMessage(it.vim, "") }
+    VimListenerManager.VimLastSelectedEditorTracker.resetLastSelectedEditor(fixture.project)
     SelectionVimListenerSuppressor.lock().use { fixture.tearDown() }
     ExEntryPanel.getInstance().deactivate(false)
     VimPlugin.getVariableService().clear()
@@ -171,6 +259,12 @@ abstract class VimTestCase {
     VimPlugin.getChange().resetRepeat()
     VimPlugin.getKey().savedShortcutConflicts.clear()
     assertTrue(KeyHandler.getInstance().keyStack.isEmpty())
+    injector.outputPanel.getCurrentOutputPanel()?.close()
+    injector.modalInput.getCurrentModalInput()?.deactivate(refocusOwningEditor = false, resetCaret = false)
+    (injector.digraphGroup as VimDigraphGroupBase).clearCustomDigraphs()
+
+    // Important to reset in tearDown as well as setUp, so we reset modified test options
+    resetAllOptions()
 
     // Tear down neovim
     NeovimTesting.tearDown(testInfo)
@@ -256,6 +350,7 @@ abstract class VimTestCase {
 
   protected fun configureByText(fileType: FileType, content: String): Editor {
     fixture.configureByText(fileType, content)
+    setDefaultIntelliJSettings(fixture.editor)
     NeovimTesting.setupEditor(fixture.editor, testInfo)
     setEditorVisibleSize(screenWidth, screenHeight)
     return fixture.editor
@@ -263,13 +358,15 @@ abstract class VimTestCase {
 
   private fun configureByText(fileName: String, content: String): Editor {
     fixture.configureByText(fileName, content)
+    setDefaultIntelliJSettings(fixture.editor)
     NeovimTesting.setupEditor(fixture.editor, testInfo)
     setEditorVisibleSize(screenWidth, screenHeight)
     return fixture.editor
   }
 
-  public fun configureByTextX(fileName: String, content: String): Editor {
+  fun configureByTextX(fileName: String, content: String): Editor {
     fixture.configureByText(fileName, content)
+    setDefaultIntelliJSettings(fixture.editor)
     NeovimTesting.setupEditor(fixture.editor, testInfo)
     setEditorVisibleSize(screenWidth, screenHeight)
     return fixture.editor
@@ -277,6 +374,7 @@ abstract class VimTestCase {
 
   protected fun configureByFileName(fileName: String): Editor {
     fixture.configureByText(fileName, "\n")
+    setDefaultIntelliJSettings(fixture.editor)
     NeovimTesting.setupEditor(fixture.editor, testInfo)
     setEditorVisibleSize(screenWidth, screenHeight)
     return fixture.editor
@@ -300,13 +398,18 @@ abstract class VimTestCase {
     configureByText(stringBuilder.toString())
   }
 
-  protected fun configureByColumns(columnCount: Int) {
+  protected fun configureByColumns(columnCount: Int, disableWrap: Boolean = true) {
     val content = buildString {
       repeat(columnCount) {
         append('0' + (it % 10))
       }
     }
     configureByText(content)
+
+    // `'wrap'` is set by default. But if we're configuring long columns, we usually don't want soft wraps enabled
+    if (disableWrap) {
+      enterCommand("set nowrap")
+    }
   }
 
   @JvmOverloads
@@ -341,16 +444,19 @@ abstract class VimTestCase {
   protected fun typeText(vararg keys: String) = typeText(keys.flatMap { injector.parser.parseKeys(it) })
 
   protected fun typeText(keys: List<KeyStroke?>): Editor {
-    val editor = fixture.editor
+    return typeText(fixture.editor, keys)
+  }
+
+  protected fun typeText(editor: Editor, keys: List<KeyStroke?>): Editor {
     NeovimTesting.typeCommand(
       keys.filterNotNull().joinToString(separator = "") { injector.parser.toKeyNotation(it) },
       testInfo,
       editor,
     )
     val project = fixture.project
-    when (Checks.keyHandler) {
-      Checks.KeyHandlerMethod.DIRECT_TO_VIM -> typeText(keys.filterNotNull(), editor, project)
-      Checks.KeyHandlerMethod.VIA_IDE -> typeTextViaIde(keys.filterNotNull(), editor)
+    when (VimTestCase.Checks.keyHandler) {
+      VimTestCase.Checks.KeyHandlerMethod.DIRECT_TO_VIM -> typeText(keys.filterNotNull(), editor, project)
+      VimTestCase.Checks.KeyHandlerMethod.VIA_IDE -> typeTextViaIde(keys.filterNotNull(), editor)
     }
     return editor
   }
@@ -448,12 +554,20 @@ abstract class VimTestCase {
   }
 
   protected fun assertRegister(char: Char, expected: String?) {
-    val actual = injector.registerGroup.getRegister(char)?.keys?.let(injector.parser::toKeyNotation)
-    assertEquals(expected, actual, "Wrong register contents")
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    if (expected == null) {
+      assertNull(injector.registerGroup.getRegister(vimEditor, context, char))
+    } else {
+      assertEquals(expected, injector.registerGroup.getRegister(vimEditor, context, char)?.printableString)
+    }
   }
 
   protected fun assertRegisterString(char: Char, expected: String?) {
-    val actual = injector.registerGroup.getRegister(char)?.keys?.let(injector.parser::toPrintableString)
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    val actual =
+      injector.registerGroup.getRegister(vimEditor, context, char)?.keys?.let(injector.parser::toPrintableString)
     assertEquals(expected, actual, "Wrong register contents")
   }
 
@@ -558,7 +672,7 @@ abstract class VimTestCase {
   fun assertNoMapping(from: String, modes: Set<MappingMode>) {
     val keys = injector.parser.parseKeys(from)
     for (mode in modes) {
-      assertNull(VimPlugin.getKey().getKeyMapping(mode)[keys])
+      assertNull(VimPlugin.getKey().getKeyMapping(mode)[keys], "Expected no mapping for $mode")
     }
   }
 
@@ -595,16 +709,22 @@ abstract class VimTestCase {
     assertExOutput(expected)
   }
 
-  fun assertExOutput(expected: String) {
-    val actual = getInstance(fixture.editor).text
+  fun assertExOutput(expected: String, clear: Boolean = true) {
+    val actual = injector.outputPanel.getCurrentOutputPanel()?.text
     assertNotNull(actual, "No Ex output")
     assertEquals(expected, actual)
     NeovimTesting.typeCommand("<esc>", testInfo, fixture.editor)
+    if (clear) {
+      // Ex output is not cleared until the output pane is activated again (we need it to persist so that :print will
+      // work when called multiple times from :global). When testing, if the previous action fails before it can
+      // activate the output pane, we'll be looking at stale results.
+      ExOutputModel.getInstance(fixture.editor).clear()
+    }
   }
 
   fun assertNoExOutput() {
-    val actual = getInstance(fixture.editor).text
-    assertNull(actual, "Ex output not null")
+    val actual = ExOutputModel.getInstance(fixture.editor).text
+    assertEquals("", actual)
   }
 
   fun assertPluginError(isError: Boolean) {
@@ -615,8 +735,16 @@ abstract class VimTestCase {
     assertContains(VimPlugin.getMessage(), message)
   }
 
+  fun assertStatusLineMessageContains(message: String) {
+    assertContains(VimPlugin.getMessage(), message)
+  }
+
+  fun assertStatusLineCleared() {
+    assertNull(VimPlugin.getMessage())
+  }
+
   protected fun assertCaretsVisualAttributes() {
-    if (!Checks.caretShape) return
+    if (!VimTestCase.Checks.caretShape) return
     val editor = fixture.editor
     val attributes = GuiCursorOptionHelper.getAttributes(getGuiCursorMode(editor))
     val colour = editor.colorsScheme.getColor(EditorColors.CARET_COLOR)
@@ -642,6 +770,80 @@ abstract class VimTestCase {
         }
       }
     }
+  }
+
+  @Suppress("DEPRECATION", "SameParameterValue")
+  protected fun assertSearchHighlights(tooltip: String, expected: String) {
+    val allHighlighters = fixture.editor.markupModel.allHighlighters
+
+    thisLogger().debug("Current text: ${fixture.editor.document.text}")
+    val actual = StringBuilder(fixture.editor.document.text)
+    val inserts = mutableMapOf<Int, String>()
+
+    // Digraphs:
+    // <C-K>3" → ‷ + <C-K>3' → ‴ (current match)
+    // <C-K><< → « + <C-K>>> → » (normal match)
+    allHighlighters.forEach {
+      // TODO: This is not the nicest way to check for current match. Add something to the highlight's user data?
+      if (it.textAttributes?.effectType == EffectType.ROUNDED_BOX) {
+        inserts.compute(it.startOffset) { _, v -> if (v == null) "‷" else "$v‷" }
+        inserts.compute(it.endOffset) { _, v -> if (v == null) "‴" else "$v‴" }
+      } else {
+        inserts.compute(it.startOffset) { _, v -> if (v == null) "«" else "$v«" }
+        inserts.compute(it.endOffset) { _, v -> if (v == null) "»" else "$v»" }
+      }
+    }
+
+    var offset = 0
+    inserts.toSortedMap().forEach { (k, v) ->
+      actual.insert(k + offset, v)
+      offset += v.length
+    }
+
+    assertEquals(expected, actual.toString())
+
+    // Assert all highlighters have the correct tooltip and text attributes
+    val editorColorsScheme = EditorColorsManager.getInstance().globalScheme
+    val attributes = editorColorsScheme.getAttributes(EditorColors.TEXT_SEARCH_RESULT_ATTRIBUTES)
+    val caretColour = editorColorsScheme.getColor(EditorColors.CARET_COLOR)
+    allHighlighters.forEach {
+      val offsets = "(${it.startOffset}, ${it.endOffset})"
+      assertEquals(tooltip, it.errorStripeTooltip, "Incorrect tooltip for highlighter at $offsets")
+      assertEquals(
+        attributes.backgroundColor,
+        it.textAttributes?.backgroundColor,
+        "Incorrect background colour for highlighter at $offsets",
+      )
+      assertEquals(
+        attributes.foregroundColor,
+        it.textAttributes?.foregroundColor,
+        "Incorrect foreground colour for highlighter at $offsets",
+      )
+      // TODO: Find a better way to identify the current match
+      if (it.textAttributes?.effectType == EffectType.ROUNDED_BOX) {
+        assertEquals(
+          EffectType.ROUNDED_BOX,
+          it.textAttributes?.effectType,
+          "Incorrect effect type for highlighter at $offsets",
+        )
+        assertEquals(caretColour, it.textAttributes?.effectColor, "Incorrect effect colour for highlighter at $offsets")
+      } else {
+        assertEquals(
+          attributes.effectType,
+          it.textAttributes?.effectType,
+          "Incorrect effect type for highlighter at $offsets",
+        )
+        assertEquals(
+          attributes.effectColor,
+          it.textAttributes?.effectColor,
+          "Incorrect effect colour for highlighter at $offsets",
+        )
+      }
+    }
+  }
+
+  protected fun assertNoSearchHighlights() {
+    assertEquals(0, fixture.editor.markupModel.allHighlighters.size)
   }
 
   @JvmOverloads
@@ -729,8 +931,8 @@ abstract class VimTestCase {
   }
 
   // Disable or enable checks for the particular test
-  protected inline fun setupChecks(setup: Checks.() -> Unit) {
-    Checks.setup()
+  protected inline fun setupChecks(setup: VimTestCase.Checks.() -> Unit) {
+    VimTestCase.Checks.setup()
   }
 
   protected fun assertExException(expectedErrorMessage: String, action: () -> Unit) {
@@ -760,9 +962,13 @@ abstract class VimTestCase {
           val event =
             KeyEvent(editor.component, KeyEvent.KEY_PRESSED, Date().time, key.modifiers, key.keyCode, key.keyChar)
 
+          val context = SimpleDataContext.builder()
+            .setParent(EditorUtil.getEditorDataContext(editor))
+            .add(PlatformCoreDataKeys.CONTEXT_COMPONENT, editor.component)
+            .build()
           val e = AnActionEvent(
             event,
-            injector.executionContextManager.onEditor(editor.vim).ij,
+            context,
             ActionPlaces.KEYBOARD_SHORTCUT,
             VimShortcutKeyAction.instance.templatePresentation.clone(),
             ActionManager.getInstance(),
@@ -807,15 +1013,9 @@ abstract class VimTestCase {
     const val s = EditorTestUtil.SELECTION_START_TAG
     const val se = EditorTestUtil.SELECTION_END_TAG
 
-    @BeforeAll
-    @JvmStatic
-    fun beforeAll() {
-      println("Neovim testing: ${NeovimTesting.isNeovimTestingEnabled()}")
-    }
-
     fun typeText(keys: List<KeyStroke?>, editor: Editor, project: Project?) {
       val keyHandler = KeyHandler.getInstance()
-      val dataContext = injector.executionContextManager.onEditor(editor.vim)
+      val dataContext = injector.executionContextManager.getEditorExecutionContext(editor.vim)
       TestInputModel.getInstance(editor).setKeyStrokes(keys.filterNotNull())
       runWriteCommand(
         project,
@@ -858,35 +1058,5 @@ abstract class VimTestCase {
     fun String.dotToTab(): String = replace('.', '\t')
 
     fun String.dotToSpace(): String = replace('.', ' ')
-  }
-
-  object Checks {
-    var caretShape: Boolean = true
-
-    val neoVim = NeoVim()
-
-    var keyHandler = KeyHandlerMethod.VIA_IDE
-
-    fun reset() {
-      caretShape = true
-
-      neoVim.reset()
-      keyHandler = KeyHandlerMethod.VIA_IDE
-    }
-
-    class NeoVim {
-      var ignoredRegisters: Set<Char> = setOf()
-      var exitOnTearDown = true
-
-      fun reset() {
-        ignoredRegisters = setOf()
-        exitOnTearDown = true
-      }
-    }
-
-    enum class KeyHandlerMethod {
-      VIA_IDE,
-      DIRECT_TO_VIM,
-    }
   }
 }

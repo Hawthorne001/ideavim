@@ -19,9 +19,9 @@ import com.maddyhome.idea.vim.handler.ChangeEditorActionHandler
 import org.jetbrains.annotations.Contract
 
 @CommandOrMotion(keys = ["i", "<Insert>"], modes = [Mode.NORMAL])
-public class InsertBeforeCursorAction : ChangeEditorActionHandler.SingleExecution() {
+class InsertBeforeCursorAction : ChangeEditorActionHandler.SingleExecution() {
   @get:Contract(pure = true)
-  override val type: Command.Type = Command.Type.INSERT
+  override val type: Command.Type = Command.Type.MODE_CHANGE
 
   override fun execute(
     editor: VimEditor,

@@ -15,13 +15,13 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.api.options
 import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.handler.VimActionHandler
 import com.maddyhome.idea.vim.options.OptionConstants
+import com.maddyhome.idea.vim.state.mode.SelectionType
 
 @CommandOrMotion(keys = ["<C-q>", "<C-v>"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class VisualToggleBlockModeAction : VimActionHandler.SingleExecution() {
-  override val type: Command.Type = Command.Type.OTHER_READONLY
+class VisualToggleBlockModeAction : VimActionHandler.SingleExecution() {
+  override val type: Command.Type = Command.Type.MODE_CHANGE
 
   override fun execute(
     editor: VimEditor,
@@ -32,8 +32,7 @@ public class VisualToggleBlockModeAction : VimActionHandler.SingleExecution() {
     return if (injector.options(editor).selectmode.contains(OptionConstants.selectmode_cmd)) {
       injector.visualMotionGroup.enterSelectMode(editor, SelectionType.BLOCK_WISE)
     } else {
-      injector.visualMotionGroup
-        .toggleVisual(editor, cmd.count, cmd.rawCount, SelectionType.BLOCK_WISE)
+      injector.visualMotionGroup.toggleVisual(editor, cmd.count, cmd.rawCount, SelectionType.BLOCK_WISE)
     }
   }
 }

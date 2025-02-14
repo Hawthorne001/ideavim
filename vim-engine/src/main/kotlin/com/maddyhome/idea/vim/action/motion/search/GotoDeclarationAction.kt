@@ -20,7 +20,7 @@ import com.maddyhome.idea.vim.helper.enumSetOf
 import java.util.*
 
 @CommandOrMotion(keys = ["gD", "gd", "<C-]>"], modes = [Mode.NORMAL, Mode.VISUAL])
-public class GotoDeclarationAction : VimActionHandler.SingleExecution() {
+class GotoDeclarationAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_SAVE_JUMP)
@@ -32,7 +32,7 @@ public class GotoDeclarationAction : VimActionHandler.SingleExecution() {
     operatorArguments: OperatorArguments,
   ): Boolean {
     injector.jumpService.saveJumpLocation(editor)
-    injector.actionExecutor.executeAction("GotoDeclaration", context)
+    injector.actionExecutor.executeAction(editor, name = "GotoDeclaration", context = context)
     return true
   }
 }

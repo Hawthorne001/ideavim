@@ -23,7 +23,7 @@ import com.maddyhome.idea.vim.put.PutData
 /**
  * @author vlan
  */
-public sealed class PutVisualTextBaseAction(
+sealed class PutVisualTextBaseAction(
   private val insertTextBeforeCaret: Boolean,
   private val indent: Boolean,
   private val caretAfterInsertedText: Boolean,
@@ -41,7 +41,8 @@ public sealed class PutVisualTextBaseAction(
   ): Boolean {
     if (caretsAndSelections.isEmpty()) return false
     val count = cmd.count
-    val caretToPutData = editor.sortedCarets().associateWith { getPutDataForCaret(it, caretsAndSelections[it], count) }
+    val caretToPutData =
+      editor.sortedCarets().associateWith { getPutDataForCaret(editor, context, it, caretsAndSelections[it], count) }
     injector.registerGroup.resetRegister()
     var result = true
     injector.application.runWriteAction {
@@ -52,36 +53,40 @@ public sealed class PutVisualTextBaseAction(
     return result
   }
 
-  private fun getPutDataForCaret(caret: VimCaret, selection: VimSelection?, count: Int): PutData {
+  private fun getPutDataForCaret(
+    editor: VimEditor,
+    context: ExecutionContext,
+    caret: VimCaret,
+    selection: VimSelection?,
+    count: Int,
+  ): PutData {
     val lastRegisterChar = injector.registerGroup.lastRegisterChar
-    val register = caret.registerStorage.getRegister(lastRegisterChar)
-    val textData = register?.let {
-      PutData.TextData(
-        register.text ?: injector.parser.toPrintableString(register.keys),
-        register.type,
-        register.transferableData,
-        register.name,
-      )
-    }
+    val register = caret.registerStorage.getRegister(editor, context, lastRegisterChar)
+    val textData = register?.let { PutData.TextData(register) }
     val visualSelection = selection?.let { PutData.VisualSelection(mapOf(caret to it), it.type) }
     return PutData(textData, visualSelection, count, insertTextBeforeCaret, indent, caretAfterInsertedText)
   }
 }
 
 @CommandOrMotion(keys = ["P"], modes = [Mode.VISUAL])
-public class PutVisualTextBeforeCursorAction : PutVisualTextBaseAction(insertTextBeforeCaret = true, indent = true, caretAfterInsertedText = false, modifyRegister = false)
+class PutVisualTextBeforeCursorAction : PutVisualTextBaseAction(
+  insertTextBeforeCaret = true,
+  indent = true,
+  caretAfterInsertedText = false,
+  modifyRegister = false
+)
 
 @CommandOrMotion(keys = ["p"], modes = [Mode.VISUAL])
-public class PutVisualTextAfterCursorAction : PutVisualTextBaseAction(insertTextBeforeCaret = false, indent = true, caretAfterInsertedText = false)
+class PutVisualTextAfterCursorAction : PutVisualTextBaseAction(insertTextBeforeCaret = false, indent = true, caretAfterInsertedText = false)
 
 @CommandOrMotion(keys = ["]P", "[P"], modes = [Mode.VISUAL])
-public class PutVisualTextBeforeCursorNoIndentAction : PutVisualTextBaseAction(insertTextBeforeCaret = true, indent = false, caretAfterInsertedText = false)
+class PutVisualTextBeforeCursorNoIndentAction : PutVisualTextBaseAction(insertTextBeforeCaret = true, indent = false, caretAfterInsertedText = false)
 
 @CommandOrMotion(keys = ["[p", "]p"], modes = [Mode.VISUAL])
-public class PutVisualTextAfterCursorNoIndentAction : PutVisualTextBaseAction(insertTextBeforeCaret = false, indent = false, caretAfterInsertedText = false)
+class PutVisualTextAfterCursorNoIndentAction : PutVisualTextBaseAction(insertTextBeforeCaret = false, indent = false, caretAfterInsertedText = false)
 
 @CommandOrMotion(keys = ["gP"], modes = [Mode.VISUAL])
-public class PutVisualTextBeforeCursorMoveCursorAction : PutVisualTextBaseAction(insertTextBeforeCaret = true, indent = true, caretAfterInsertedText = true)
+class PutVisualTextBeforeCursorMoveCursorAction : PutVisualTextBaseAction(insertTextBeforeCaret = true, indent = true, caretAfterInsertedText = true)
 
 @CommandOrMotion(keys = ["gp"], modes = [Mode.VISUAL])
-public class PutVisualTextAfterCursorMoveCursorAction : PutVisualTextBaseAction(insertTextBeforeCaret = false, indent = true, caretAfterInsertedText = true)
+class PutVisualTextAfterCursorMoveCursorAction : PutVisualTextBaseAction(insertTextBeforeCaret = false, indent = true, caretAfterInsertedText = true)

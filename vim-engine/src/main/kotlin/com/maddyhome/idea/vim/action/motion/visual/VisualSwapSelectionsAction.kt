@@ -18,14 +18,12 @@ import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.common.TextRange
 import com.maddyhome.idea.vim.group.visual.vimSetSelection
 import com.maddyhome.idea.vim.handler.VimActionHandler
-import com.maddyhome.idea.vim.helper.vimStateMachine
-import com.maddyhome.idea.vim.state.mode.mode
 
 /**
  * @author vlan
  */
 @CommandOrMotion(keys = ["gv"], modes = [Mode.VISUAL])
-public class VisualSwapSelectionsAction : VimActionHandler.SingleExecution() {
+class VisualSwapSelectionsAction : VimActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_READONLY
 
   // FIXME: 2019-03-05 Make it multicaret

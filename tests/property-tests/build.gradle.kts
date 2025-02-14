@@ -1,15 +1,22 @@
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
+
 plugins {
   java
   kotlin("jvm")
-  id("org.jetbrains.intellij")
+  id("org.jetbrains.intellij.platform.module")
 }
 
 repositories {
   mavenCentral()
-  maven { url = uri("https://cache-redirector.jetbrains.com/intellij-dependencies") }
+
+  intellijPlatform {
+    defaultRepositories()
+  }
 }
 
 val kotlinVersion: String by project
+val ideaType: String by project
 val ideaVersion: String by project
 val javaVersion: String by project
 
@@ -18,6 +25,23 @@ dependencies {
   compileOnly("org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion")
   testImplementation("org.jetbrains.kotlin:kotlin-test:$kotlinVersion")
   testImplementation(testFixtures(project(":"))) // The root project
+  testImplementation("org.junit.vintage:junit-vintage-engine:5.10.5")
+
+  intellijPlatform {
+    // Snapshots don't use installers
+    // https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html#target-versions-installers
+    val useInstaller = "EAP-SNAPSHOT" !in ideaVersion
+
+    create(ideaType, ideaVersion, useInstaller)
+    bundledPlugins("com.intellij.java")
+    testFramework(TestFrameworkType.Platform)
+    testFramework(TestFrameworkType.JUnit5)
+    instrumentationTools()
+  }
+}
+
+intellijPlatform {
+  buildSearchableOptions = false
 }
 
 tasks {
@@ -28,32 +52,13 @@ tasks {
     enabled = false
   }
 
-  register<Test>("testPropertyBased") {
-    group = "verification"
-    useJUnitPlatform()
+  // The `test` task is automatically set up with IntelliJ goodness. A custom test task needs to be configured for it
+  val testPropertyBased by intellijPlatformTesting.testIde.registering {
+    task {
+      group = "verification"
+      useJUnitPlatform()
+    }
   }
-
-  verifyPlugin {
-    enabled = false
-  }
-
-  publishPlugin {
-    enabled = false
-  }
-
-  runIde {
-    enabled = false
-  }
-
-  runPluginVerifier {
-    enabled = false
-  }
-}
-
-intellij {
-  version.set(ideaVersion)
-  type.set("IC")
-  plugins.set(listOf("java"))
 }
 
 java {

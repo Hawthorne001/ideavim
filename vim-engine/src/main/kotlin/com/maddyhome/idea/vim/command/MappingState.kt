@@ -16,27 +16,32 @@ import java.awt.event.ActionListener
 import javax.swing.KeyStroke
 import javax.swing.Timer
 
-public class MappingState: Cloneable {
+class MappingState : Cloneable {
   // Map command depth. 0 - if it is not a map command. 1 - regular map command. 2+ - nested map commands
   private var mapDepth = 0
 
   @Deprecated("This function is created only for binary compatibility")
-  public fun getMappingMode(): MappingMode = MappingMode.NORMAL
+  fun getMappingMode(): MappingMode = MappingMode.NORMAL
 
-  public fun isExecutingMap(): Boolean {
+  fun isExecutingMap(): Boolean {
     return mapDepth > 0
   }
 
-  public fun startMapExecution() {
+  fun startMapExecution() {
     ++mapDepth
   }
 
-  public fun stopMapExecution() {
+  fun stopMapExecution() {
     --mapDepth
   }
 
-  public val keys: Iterable<KeyStroke>
+  // TODO: This should probably return List<KeyStroke> to match the keys we're using in KeyMapping
+  // Let's avoid creating temporary wrapper lists when we could use this list directly
+  val keys: Iterable<KeyStroke>
     get() = keyList
+
+  val hasKeys
+    get() = keyList.isNotEmpty()
 
   private var timer = VimTimer(injector.globalOptions().timeoutlen)
   private var keyList = mutableListOf<KeyStroke>()
@@ -45,30 +50,30 @@ public class MappingState: Cloneable {
     timer.isRepeats = false
   }
 
-  public fun startMappingTimer(actionListener: ActionListener) {
+  fun startMappingTimer(actionListener: ActionListener) {
     timer.initialDelay = injector.globalOptions().timeoutlen
     timer.actionListeners.forEach { timer.removeActionListener(it) }
     timer.addActionListener(actionListener)
     timer.start()
   }
 
-  public fun stopMappingTimer() {
+  fun stopMappingTimer() {
     LOG.trace { "Stop mapping timer" }
     timer.stop()
     timer.actionListeners.forEach { timer.removeActionListener(it) }
   }
 
-  public fun addKey(key: KeyStroke) {
+  fun addKey(key: KeyStroke) {
     keyList.add(key)
   }
 
-  public fun detachKeys(): List<KeyStroke> {
+  fun detachKeys(): List<KeyStroke> {
     val currentKeys = keyList
     keyList = mutableListOf()
     return currentKeys
   }
 
-  public fun resetMappingSequence() {
+  fun resetMappingSequence() {
     LOG.trace("Reset mapping sequence")
     stopMappingTimer()
     keyList.clear()
@@ -103,11 +108,15 @@ public class MappingState: Cloneable {
     return result
   }
 
-  public companion object {
+  override fun toString(): String {
+    return "Map depth = $mapDepth, keys = ${injector.parser.toKeyNotation(keys.toList())}"
+  }
+
+  companion object {
     private val LOG = vimLogger<MappingState>()
   }
 
-  public class VimTimer(delay: Int) : Timer(delay, null) {
+  class VimTimer(delay: Int) : Timer(delay, null) {
     override fun equals(other: Any?): Boolean {
       if (this === other) return true
       if (javaClass != other?.javaClass) return false

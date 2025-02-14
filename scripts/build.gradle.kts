@@ -20,17 +20,17 @@ repositories {
 }
 
 dependencies {
-  compileOnly("org.jetbrains.kotlin:kotlin-stdlib:1.9.23")
+  compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.1.10")
 
-  implementation("io.ktor:ktor-client-core:2.3.10")
-  implementation("io.ktor:ktor-client-cio:2.3.10")
-  implementation("io.ktor:ktor-client-content-negotiation:2.3.9")
-  implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.10")
-  implementation("io.ktor:ktor-client-auth:2.3.9")
+  implementation("io.ktor:ktor-client-core:3.0.3")
+  implementation("io.ktor:ktor-client-cio:3.0.3")
+  implementation("io.ktor:ktor-client-content-negotiation:3.0.3")
+  implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.3")
+  implementation("io.ktor:ktor-client-auth:3.0.3")
   implementation("org.eclipse.jgit:org.eclipse.jgit:6.6.0.202305301015-r")
 
   // This is needed for jgit to connect to ssh
-  implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:6.9.0.202403050737-r")
+  implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.1.0.202411261347-r")
   implementation("com.vdurmont:semver4j:3.1.0")
 }
 
@@ -103,6 +103,13 @@ tasks.register("eapReleaseActions", JavaExec::class) {
 tasks.register("calculateNewEapVersion", JavaExec::class) {
   group = "release"
   mainClass.set("scripts.release.CalculateNewEapVersionKt")
+  classpath = sourceSets["main"].runtimeClasspath
+  args = listOf("${rootProject.rootDir}")
+}
+
+tasks.register("calculateNewEapVersionFromBranch", JavaExec::class) {
+  group = "release"
+  mainClass.set("scripts.release.CalculateNewEapVersionFromBranchKt")
   classpath = sourceSets["main"].runtimeClasspath
   args = listOf("${rootProject.rootDir}")
 }

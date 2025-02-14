@@ -10,10 +10,16 @@ plugins {
     java
     kotlin("jvm")
 //    id("org.jlleitschuh.gradle.ktlint")
-    id("com.google.devtools.ksp") version "1.9.22-1.0.17"
-    kotlin("plugin.serialization") version "1.9.22"
+    id("com.google.devtools.ksp") version "2.0.0-1.0.23"
+    kotlin("plugin.serialization") version "2.0.0"
     `maven-publish`
     antlr
+}
+
+val sourcesJarArtifacts by configurations.registering {
+  attributes {
+    attribute(DocsType.DOCS_TYPE_ATTRIBUTE, objects.named(DocsType.SOURCES))
+  }
 }
 
 val kotlinVersion: String by project
@@ -39,34 +45,41 @@ afterEvaluate {
 }
 
 dependencies {
-    testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.2")
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.5")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.5")
+
+    // Temp workaround suggested in https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-faq.html#junit5-test-framework-refers-to-junit4
+    // Can be removed when IJPL-159134 is fixed
+//    testRuntimeOnly("junit:junit:4.13.2")
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.10.5")
 
     // https://mvnrepository.com/artifact/org.jetbrains.kotlin/kotlin-test
     testImplementation("org.jetbrains.kotlin:kotlin-test:$kotlinVersion")
     compileOnly("org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion")
 
-    compileOnly("org.jetbrains:annotations:24.1.0")
+    compileOnly("org.jetbrains:annotations:26.0.2")
 
-    runtimeOnly("org.antlr:antlr4-runtime:4.13.1")
-    antlr("org.antlr:antlr4:4.13.1")
+    runtimeOnly("org.antlr:antlr4-runtime:4.13.2")
+    antlr("org.antlr:antlr4:4.13.2")
 
     ksp(project(":annotation-processors"))
     compileOnly(project(":annotation-processors"))
     compileOnly("org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:$kotlinxSerializationVersion")
 
-    testImplementation("org.mockito.kotlin:mockito-kotlin:5.3.1")
+    compileOnly(kotlin("reflect"))
+
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 }
 
 tasks {
-    val test by getting(Test::class) {
-        useJUnitPlatform()
+    test {
+      useJUnitPlatform()
     }
 
     generateGrammarSource {
         maxHeapSize = "128m"
-        arguments.addAll(listOf("-package", "com.maddyhome.idea.vim.regexp.parser.generated", "-visitor"))
-        outputDirectory = file("src/main/java/com/maddyhome/idea/vim/regexp/parser/generated")
+        arguments.addAll(listOf("-package", "com.maddyhome.idea.vim.parser.generated", "-visitor"))
+        outputDirectory = file("src/main/java/com/maddyhome/idea/vim/parser/generated")
     }
 
     named("compileKotlin") {
@@ -90,14 +103,12 @@ tasks {
 //    version.set("0.48.2")
 //}
 
-kotlin {
-    explicitApi()
-}
-
 java {
   withSourcesJar()
   withJavadocJar()
 }
+
+artifacts.add(sourcesJarArtifacts.name, tasks.named("sourcesJar"))
 
 val spaceUsername: String by project
 val spacePassword: String by project

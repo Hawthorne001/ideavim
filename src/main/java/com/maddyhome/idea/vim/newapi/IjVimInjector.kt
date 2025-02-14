@@ -11,10 +11,8 @@ package com.maddyhome.idea.vim.newapi
 import com.intellij.openapi.components.service
 import com.intellij.openapi.components.serviceIfCreated
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.textarea.TextComponentEditorImpl
 import com.maddyhome.idea.vim.api.EngineEditorHelper
-import com.maddyhome.idea.vim.api.ExEntryPanel
 import com.maddyhome.idea.vim.api.ExecutionContextManager
 import com.maddyhome.idea.vim.api.LocalOptionInitialisationScenario
 import com.maddyhome.idea.vim.api.NativeActionManager
@@ -24,12 +22,11 @@ import com.maddyhome.idea.vim.api.VimApplication
 import com.maddyhome.idea.vim.api.VimChangeGroup
 import com.maddyhome.idea.vim.api.VimClipboardManager
 import com.maddyhome.idea.vim.api.VimCommandGroup
+import com.maddyhome.idea.vim.api.VimCommandLineService
 import com.maddyhome.idea.vim.api.VimDigraphGroup
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.VimEditorGroup
 import com.maddyhome.idea.vim.api.VimEnabler
-import com.maddyhome.idea.vim.api.VimExOutputPanel
-import com.maddyhome.idea.vim.api.VimExOutputPanelService
 import com.maddyhome.idea.vim.api.VimExtensionRegistrator
 import com.maddyhome.idea.vim.api.VimFile
 import com.maddyhome.idea.vim.api.VimInjector
@@ -39,10 +36,14 @@ import com.maddyhome.idea.vim.api.VimKeyGroup
 import com.maddyhome.idea.vim.api.VimLookupManager
 import com.maddyhome.idea.vim.api.VimMarkService
 import com.maddyhome.idea.vim.api.VimMessages
+import com.maddyhome.idea.vim.api.VimModalInputService
 import com.maddyhome.idea.vim.api.VimMotionGroup
 import com.maddyhome.idea.vim.api.VimOptionGroup
+import com.maddyhome.idea.vim.api.VimOutputPanelService
 import com.maddyhome.idea.vim.api.VimProcessGroup
 import com.maddyhome.idea.vim.api.VimPsiService
+import com.maddyhome.idea.vim.api.VimRedrawService
+import com.maddyhome.idea.vim.api.VimRegexServiceBase
 import com.maddyhome.idea.vim.api.VimRegexpService
 import com.maddyhome.idea.vim.api.VimScrollGroup
 import com.maddyhome.idea.vim.api.VimSearchGroup
@@ -56,8 +57,9 @@ import com.maddyhome.idea.vim.api.VimrcFileState
 import com.maddyhome.idea.vim.api.VimscriptExecutor
 import com.maddyhome.idea.vim.api.VimscriptFunctionService
 import com.maddyhome.idea.vim.api.VimscriptParser
+import com.maddyhome.idea.vim.api.injector
+import com.maddyhome.idea.vim.api.isInjectorInitialized
 import com.maddyhome.idea.vim.diagnostic.VimLogger
-import com.maddyhome.idea.vim.ex.ExOutputModel
 import com.maddyhome.idea.vim.extension.VimExtensionRegistrar
 import com.maddyhome.idea.vim.group.CommandGroup
 import com.maddyhome.idea.vim.group.EditorGroup
@@ -69,32 +71,37 @@ import com.maddyhome.idea.vim.group.IjVimOptionGroup
 import com.maddyhome.idea.vim.group.IjVimPsiService
 import com.maddyhome.idea.vim.group.MacroGroup
 import com.maddyhome.idea.vim.group.MotionGroup
-import com.maddyhome.idea.vim.group.SearchGroup
 import com.maddyhome.idea.vim.group.TabService
 import com.maddyhome.idea.vim.group.VimWindowGroup
 import com.maddyhome.idea.vim.group.WindowGroup
 import com.maddyhome.idea.vim.group.copy.PutGroup
-import com.maddyhome.idea.vim.helper.CommandLineHelper
 import com.maddyhome.idea.vim.helper.IjActionExecutor
 import com.maddyhome.idea.vim.helper.IjEditorHelper
 import com.maddyhome.idea.vim.helper.IjVimStringParser
 import com.maddyhome.idea.vim.helper.UndoRedoHelper
-import com.maddyhome.idea.vim.helper.VimCommandLineHelper
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.history.VimHistory
-import com.maddyhome.idea.vim.impl.state.VimStateMachineImpl
 import com.maddyhome.idea.vim.macro.VimMacro
 import com.maddyhome.idea.vim.put.VimPut
 import com.maddyhome.idea.vim.register.VimRegisterGroup
 import com.maddyhome.idea.vim.state.VimStateMachine
 import com.maddyhome.idea.vim.ui.VimRcFileState
+import com.maddyhome.idea.vim.ui.ex.ExEntryPanelService
 import com.maddyhome.idea.vim.undo.VimUndoRedo
 import com.maddyhome.idea.vim.vimscript.Executor
-import com.maddyhome.idea.vim.vimscript.services.PatternService
 import com.maddyhome.idea.vim.vimscript.services.VariableService
 import com.maddyhome.idea.vim.yank.VimYankGroup
 import com.maddyhome.idea.vim.yank.YankGroupBase
 import javax.swing.JTextArea
+
+/**
+ * Currently, injector has to be initialized in all "entry points" from the IJ platform.
+ * This means Project Activities, listeners, status bar widgets, statistic collectors, etc.
+ * This is a bad pattern and we need to find a solution where the plugin doesn't have an "uninitialized state"
+ */
+internal fun initInjector() {
+  if (isInjectorInitialized()) return
+  injector = IjVimInjector()
+}
 
 internal class IjVimInjector : VimInjectorBase() {
   override fun <T : Any> getLogger(clazz: Class<T>): VimLogger = IjVimLogger(Logger.getInstance(clazz))
@@ -107,14 +114,6 @@ internal class IjVimInjector : VimInjectorBase() {
 
   override val actionExecutor: VimActionExecutor
     get() = service<IjActionExecutor>()
-  override val exEntryPanel: ExEntryPanel
-    get() = service<IjExEntryPanel>()
-  override val exOutputPanel: VimExOutputPanelService
-    get() = object : VimExOutputPanelService {
-      override fun getPanel(editor: VimEditor): VimExOutputPanel {
-        return ExOutputModel.getInstance(editor.ij)
-      }
-    }
   override val historyGroup: VimHistory
     get() = service<HistoryGroup>()
   override val extensionRegistrator: VimExtensionRegistrator
@@ -122,7 +121,7 @@ internal class IjVimInjector : VimInjectorBase() {
   override val tabService: TabService
     get() = service()
   override val regexpService: VimRegexpService
-    get() = PatternService
+    get() = VimRegexServiceBase()
   override val clipboardManager: VimClipboardManager
     get() = service<IjClipboardManager>()
   override val searchHelper: VimSearchHelper
@@ -136,7 +135,7 @@ internal class IjVimInjector : VimInjectorBase() {
   override val templateManager: VimTemplateManager
     get() = service<IjTemplateManager>()
   override val searchGroup: VimSearchGroup
-    get() = service<SearchGroup>()
+    get() = service<IjVimSearchGroup>()
   override val put: VimPut
     get() = service<PutGroup>()
   override val window: VimWindowGroup
@@ -151,8 +150,6 @@ internal class IjVimInjector : VimInjectorBase() {
     get() = service<UndoRedoHelper>()
   override val psiService: VimPsiService
     get() = service<IjVimPsiService>()
-  override val commandLineHelper: VimCommandLineHelper
-    get() = service<CommandLineHelper>()
   override val nativeActionManager: NativeActionManager
     get() = service<IjNativeActionManager>()
   override val messages: VimMessages
@@ -197,6 +194,12 @@ internal class IjVimInjector : VimInjectorBase() {
     get() = service<Executor>()
   override val vimscriptParser: VimscriptParser
     get() = com.maddyhome.idea.vim.vimscript.parser.VimscriptParser
+  override val commandLine: VimCommandLineService
+    get() = service()
+  override val modalInput: VimModalInputService
+    get() = commandLine as ExEntryPanelService
+  override val outputPanel: VimOutputPanelService
+    get() = service()
 
   override val optionGroup: VimOptionGroup
     get() = service()
@@ -207,22 +210,17 @@ internal class IjVimInjector : VimInjectorBase() {
     get() = service()
   override val vimStorageService: VimStorageService
     get() = service()
+  override val redrawService: VimRedrawService
+    get() = service()
 
+  @Deprecated("Please use VimInjector.vimState", replaceWith = ReplaceWith("vimState"))
   override fun commandStateFor(editor: VimEditor): VimStateMachine {
-    var res = editor.ij.vimStateMachine
-    if (res == null) {
-      res = VimStateMachineImpl()
-      editor.ij.vimStateMachine = res
-    }
-    return res
+    return vimState
   }
 
+  @Deprecated("Please use VimInjector.vimState", replaceWith = ReplaceWith("vimState"))
   override fun commandStateFor(editor: Any): VimStateMachine {
-    return when (editor) {
-      is VimEditor -> this.commandStateFor(editor)
-      is Editor -> this.commandStateFor(IjVimEditor(editor))
-      else -> error("Unexpected type: $editor")
-    }
+    return vimState
   }
 
   override val engineEditorHelper: EngineEditorHelper
@@ -234,10 +232,10 @@ internal class IjVimInjector : VimInjectorBase() {
 /**
  * Convenience function to get the IntelliJ implementation specific global option accessor
  */
-public fun VimInjector.globalIjOptions(): GlobalIjOptions = (this.optionGroup as IjVimOptionGroup).getGlobalIjOptions()
+fun VimInjector.globalIjOptions(): GlobalIjOptions = (this.optionGroup as IjVimOptionGroup).getGlobalIjOptions()
 
 /**
  * Convenience function to get the IntelliJ implementation specific option accessor for the given editor's scope
  */
-public fun VimInjector.ijOptions(editor: VimEditor): EffectiveIjOptions =
+fun VimInjector.ijOptions(editor: VimEditor): EffectiveIjOptions =
   (this.optionGroup as IjVimOptionGroup).getEffectiveIjOptions(editor)

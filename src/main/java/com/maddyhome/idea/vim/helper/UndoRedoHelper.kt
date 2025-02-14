@@ -10,42 +10,45 @@ package com.maddyhome.idea.vim.helper
 
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.PlatformDataKeys
-import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.command.undo.UndoManager
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.TextEditor
+import com.intellij.openapi.fileEditor.TextEditorWithPreview
 import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
 import com.intellij.openapi.util.registry.Registry
 import com.maddyhome.idea.vim.api.ExecutionContext
+import com.maddyhome.idea.vim.api.VimCaret
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.common.ChangesListener
-import com.maddyhome.idea.vim.listener.SelectionVimListenerSuppressor
+import com.maddyhome.idea.vim.common.InsertSequence
+import com.maddyhome.idea.vim.newapi.IjVimCaret
 import com.maddyhome.idea.vim.newapi.globalIjOptions
 import com.maddyhome.idea.vim.newapi.ij
-import com.maddyhome.idea.vim.undo.UndoRedoBase
+import com.maddyhome.idea.vim.undo.VimTimestampBasedUndoService
 
 /**
  * @author oleg
  */
 @Service
-internal class UndoRedoHelper : UndoRedoBase() {
+internal class UndoRedoHelper : VimTimestampBasedUndoService {
+  companion object {
+    private val logger = logger<UndoRedoHelper>()
+  }
+
   override fun undo(editor: VimEditor, context: ExecutionContext): Boolean {
     val ijContext = context.context as DataContext
     val project = PlatformDataKeys.PROJECT.getData(ijContext) ?: return false
-    val fileEditor = TextEditorProvider.getInstance().getTextEditor(editor.ij)
+    val textEditor = getTextEditor(editor.ij)
     val undoManager = UndoManager.getInstance(project)
-    if (undoManager.isUndoAvailable(fileEditor)) {
+    if (undoManager.isUndoAvailable(textEditor)) {
       val scrollingModel = editor.getScrollingModel()
       scrollingModel.accumulateViewportChanges()
 
-      // [VERSION UPDATE] 241+ remove this if
-      if (ApplicationInfo.getInstance().build.baselineVersion >= 241) {
-        undoFor241plus(editor, undoManager, fileEditor)
-      } else {
-        undoForLessThan241(undoManager, fileEditor, editor)
-      }
+      performUndo(editor, undoManager, textEditor)
 
       scrollingModel.flushViewportChanges()
 
@@ -54,32 +57,16 @@ internal class UndoRedoHelper : UndoRedoBase() {
     return false
   }
 
-  private fun undoForLessThan241(
-    undoManager: UndoManager,
-    fileEditor: TextEditor,
-    editor: VimEditor,
-  ) {
-    if (injector.globalIjOptions().oldundo) {
-      SelectionVimListenerSuppressor.lock().use { undoManager.undo(fileEditor) }
-    } else {
-      // TODO refactor me after VIM-308 when restoring selection and caret movement will be ignored by undo
-      editor.runWithChangeTracking {
-        undoManager.undo(fileEditor)
-
-        // We execute undo one more time if the previous one just restored selection
-        if (!hasChanges && hasSelection(editor) && undoManager.isUndoAvailable(fileEditor)) {
-          undoManager.undo(fileEditor)
-        }
-      }
-
-      CommandProcessor.getInstance().runUndoTransparentAction {
-        removeSelections(editor)
-      }
-    }
+  private fun getTextEditor(editor: Editor): TextEditor {
+    // If the Editor is hosted in a TextEditor with a preview, then TextEditorProvider will return a TextEditor for the
+    // hosted instance, not for the main editor that also contains the preview. If we pass the inner TextEditor to the
+    // UndoManager, it doesn't correctly restore state. Specifically, the change is undone/redone, but the caret is not
+    // moved. See VIM-3671.
+    val currentTextEditor = TextEditorProvider.getInstance().getTextEditor(editor)
+    return TextEditorWithPreview.getParentSplitEditor(currentTextEditor) as? TextEditor ?: currentTextEditor
   }
 
-
-  private fun undoFor241plus(
+  private fun performUndo(
     editor: VimEditor,
     undoManager: UndoManager,
     fileEditor: TextEditor,
@@ -100,7 +87,17 @@ internal class UndoRedoHelper : UndoRedoBase() {
       }
     } else {
       runWithBooleanRegistryOption("ide.undo.transparent.caret.movement", true) {
-        undoManager.undo(fileEditor)
+        var nextUndoNanoTime = undoManager.getNextUndoNanoTime(fileEditor)
+        val insertInfo = (editor.primaryCaret() as IjVimCaret).getInsertSequenceForTime(nextUndoNanoTime)
+        if (insertInfo == null || undoManager.isNextUndoAskConfirmation(fileEditor)) {
+          undoManager.undo(fileEditor)
+        } else {
+          while (insertInfo.contains(nextUndoNanoTime)) {
+            undoManager.undo(fileEditor)
+            nextUndoNanoTime = undoManager.getNextUndoNanoTime(fileEditor)
+            if (undoManager.isNextUndoAskConfirmation(fileEditor)) break
+          }
+        }
       }
 
       CommandProcessor.getInstance().runUndoTransparentAction {
@@ -112,54 +109,37 @@ internal class UndoRedoHelper : UndoRedoBase() {
   private fun hasSelection(editor: VimEditor): Boolean {
     return editor.primaryCaret().ij.hasSelection()
   }
-  
+
   override fun redo(editor: VimEditor, context: ExecutionContext): Boolean {
     val ijContext = context.context as DataContext
     val project = PlatformDataKeys.PROJECT.getData(ijContext) ?: return false
-    val fileEditor = TextEditorProvider.getInstance().getTextEditor(editor.ij)
+    val textEditor = getTextEditor(editor.ij)
     val undoManager = UndoManager.getInstance(project)
-    if (undoManager.isRedoAvailable(fileEditor)) {
-      // [VERSION UPDATE] 241+ remove this if
-      if (ApplicationInfo.getInstance().build.baselineVersion >= 241) {
-        redoFor241Plus(undoManager, fileEditor, editor)
-      } else {
-        redoForLessThan241(undoManager, fileEditor, editor)
-      }
+    if (undoManager.isRedoAvailable(textEditor)) {
+      performRedo(undoManager, textEditor, editor)
 
       return true
     }
     return false
   }
 
-  private fun redoForLessThan241(
-    undoManager: UndoManager,
-    fileEditor: TextEditor,
-    editor: VimEditor,
-  ) {
-    if (injector.globalIjOptions().oldundo) {
-      SelectionVimListenerSuppressor.lock().use { undoManager.redo(fileEditor) }
-    } else {
-      undoManager.redo(fileEditor)
-      CommandProcessor.getInstance().runUndoTransparentAction {
-        editor.carets().forEach { it.ij.removeSelection() }
-      }
-      // TODO refactor me after VIM-308 when restoring selection and caret movement will be ignored by undo
-      editor.runWithChangeTracking {
-        undoManager.redo(fileEditor)
-
-        // We execute undo one more time if the previous one just restored selection
-        if (!hasChanges && hasSelection(editor) && undoManager.isRedoAvailable(fileEditor)) {
-          undoManager.redo(fileEditor)
-        }
-      }
-
-      CommandProcessor.getInstance().runUndoTransparentAction {
-        removeSelections(editor)
-      }
-    }
+  override fun startInsertSequence(caret: VimCaret, startOffset: Int, startNanoTime: Long) {
+    (caret as IjVimCaret).startInsertSequence(startOffset, startNanoTime)
   }
 
-  private fun redoFor241Plus(
+  override fun endInsertSequence(caret: VimCaret, endOffset: Int, endNanoTime: Long) {
+    (caret as IjVimCaret).endInsertSequence(endOffset, endNanoTime)
+  }
+
+  override fun abandonCurrentInsertSequence(caret: VimCaret) {
+    (caret as IjVimCaret).abandonCurrentInsertSequece()
+  }
+
+  override fun getInsertSequence(caret: VimCaret, nanoTime: Long): InsertSequence? {
+    return (caret as IjVimCaret).getInsertSequenceForTime(nanoTime)
+  }
+
+  private fun performRedo(
     undoManager: UndoManager,
     fileEditor: TextEditor,
     editor: VimEditor,
@@ -184,10 +164,23 @@ internal class UndoRedoHelper : UndoRedoBase() {
       }
     } else {
       runWithBooleanRegistryOption("ide.undo.transparent.caret.movement", true) {
-        undoManager.redo(fileEditor)
+        var nextRedoNanoTime = undoManager.getNextRedoNanoTime(fileEditor)
+        val insertInfo = (editor.primaryCaret() as IjVimCaret).getInsertSequenceForTime(nextRedoNanoTime)
+        if (insertInfo == null || undoManager.isNextRedoAskConfirmation(fileEditor)) {
+          undoManager.redo(fileEditor)
+        } else {
+          while (insertInfo.contains(nextRedoNanoTime)) {
+            undoManager.redo(fileEditor)
+            nextRedoNanoTime = undoManager.getNextRedoNanoTime(fileEditor)
+            if (undoManager.isNextRedoAskConfirmation(fileEditor)) break
+          }
+        }
       }
 
       CommandProcessor.getInstance().runUndoTransparentAction {
+        // TODO all the carets should be moved to their corresponding insertInfo.startOffset
+        // It's a bit tricky because the offsets where calculated before text in input sequence was inserted
+        // So it will require adjusting offsets to proper one in multicaret case
         removeSelections(editor)
       }
     }

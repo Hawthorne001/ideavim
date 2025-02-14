@@ -21,12 +21,12 @@ import com.maddyhome.idea.vim.command.MotionType
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.handler.Motion
 import com.maddyhome.idea.vim.handler.NonShiftedSpecialKeyHandler
-import com.maddyhome.idea.vim.state.mode.isInsertionAllowed
 import com.maddyhome.idea.vim.state.mode.inSelectMode
 import com.maddyhome.idea.vim.state.mode.inVisualMode
+import com.maddyhome.idea.vim.state.mode.isInsertionAllowed
 
 @CommandOrMotion(keys = ["<End>"], modes = [Mode.NORMAL, Mode.VISUAL, Mode.SELECT, Mode.OP_PENDING])
-public class MotionEndAction : NonShiftedSpecialKeyHandler() {
+class MotionEndAction : NonShiftedSpecialKeyHandler() {
   override val motionType: MotionType = MotionType.INCLUSIVE
 
   override fun motion(

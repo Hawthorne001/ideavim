@@ -19,6 +19,7 @@ import com.maddyhome.idea.vim.KeyHandler;
 import com.maddyhome.idea.vim.VimPlugin;
 import com.maddyhome.idea.vim.api.ExecutionContext;
 import com.maddyhome.idea.vim.api.VimEditor;
+import com.maddyhome.idea.vim.api.VimOutputPanel;
 import com.maddyhome.idea.vim.diagnostic.VimLogger;
 import com.maddyhome.idea.vim.helper.MessageHelper;
 import com.maddyhome.idea.vim.helper.UiHelper;
@@ -46,19 +47,18 @@ import static com.maddyhome.idea.vim.api.VimInjectorKt.injector;
 public class ExOutputPanel extends JPanel {
   private final @NotNull Editor myEditor;
 
-  private final @NotNull JLabel myLabel = new JLabel("more");
+  public final @NotNull JLabel myLabel = new JLabel("more");
   private final @NotNull JTextArea myText = new JTextArea();
   private final @NotNull JScrollPane myScrollPane =
     new JBScrollPane(myText, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
   private final @NotNull ComponentAdapter myAdapter;
-  private boolean myAtEnd = false;
   private int myLineHeight = 0;
 
   private @Nullable JComponent myOldGlass = null;
   private @Nullable LayoutManager myOldLayout = null;
   private boolean myWasOpaque = false;
 
-  private boolean myActive = false;
+  public boolean myActive = false;
 
   private static final VimLogger LOG = injector.getLogger(ExOutputPanel.class);
 
@@ -90,12 +90,16 @@ public class ExOutputPanel extends JPanel {
     updateUI();
   }
 
+  public static @Nullable ExOutputPanel getNullablePanel(@NotNull Editor editor) {
+    return UserDataManager.getVimMorePanel(editor);
+  }
+
   public static boolean isPanelActive(@NotNull Editor editor) {
-    return UserDataManager.getVimMorePanel(editor) != null;
+    return getNullablePanel(editor) != null;
   }
 
   public static @NotNull ExOutputPanel getInstance(@NotNull Editor editor) {
-    ExOutputPanel panel = UserDataManager.getVimMorePanel(editor);
+    ExOutputPanel panel = getNullablePanel(editor);
     if (panel == null) {
       panel = new ExOutputPanel(editor);
       UserDataManager.setVimMorePanel(editor, panel);
@@ -135,6 +139,9 @@ public class ExOutputPanel extends JPanel {
       myText.setBorder(null);
       myScrollPane.setBorder(null);
       myLabel.setForeground(myText.getForeground());
+
+      // Make sure the panel is positioned correctly in case we're changing font size
+      positionPanel();
     }
   }
 
@@ -144,11 +151,15 @@ public class ExOutputPanel extends JPanel {
     }
 
     myText.setText(data);
-    myText.setFont(UiHelper.selectFont(data));
+    myText.setFont(UiHelper.selectEditorFont(myEditor, data));
     myText.setCaretPosition(0);
     if (!data.isEmpty()) {
       activate();
     }
+  }
+
+  public String getText() {
+    return myText.getText();
   }
 
   @SuppressWarnings("ConstantConditions")
@@ -185,7 +196,7 @@ public class ExOutputPanel extends JPanel {
   /**
    * Turns on the more window for the given editor
    */
-  private void activate() {
+  public void activate() {
     JRootPane root = SwingUtilities.getRootPane(myEditor.getContentComponent());
     myOldGlass = (JComponent)root.getGlassPane();
     if (myOldGlass != null) {
@@ -209,57 +220,58 @@ public class ExOutputPanel extends JPanel {
   }
 
   private void setFontForElements() {
-    myText.setFont(UiHelper.selectFont(myText.getText()));
-    myLabel.setFont(UiHelper.selectFont(myLabel.getText()));
+    myText.setFont(UiHelper.selectEditorFont(myEditor, myText.getText()));
+    myLabel.setFont(UiHelper.selectEditorFont(myEditor, myLabel.getText()));
   }
 
-  private void scrollLine() {
+  public void scrollLine() {
     scrollOffset(myLineHeight);
   }
 
-  private void scrollPage() {
+  public void scrollPage() {
     scrollOffset(myScrollPane.getVerticalScrollBar().getVisibleAmount());
   }
 
-  private void scrollHalfPage() {
+  public void scrollHalfPage() {
     double sa = myScrollPane.getVerticalScrollBar().getVisibleAmount() / 2.0;
     double offset = Math.ceil(sa / myLineHeight) * myLineHeight;
     scrollOffset((int)offset);
   }
 
-  private void handleEnter() {
-    if (myAtEnd) {
-      close();
-    }
-    else {
-      scrollLine();
-    }
-  }
-
-  private void badKey() {
+  public void onBadKey() {
     myLabel.setText(MessageHelper.message("more.ret.line.space.page.d.half.page.q.quit"));
-    myLabel.setFont(UiHelper.selectFont(myLabel.getText()));
+    myLabel.setFont(UiHelper.selectEditorFont(myEditor, myLabel.getText()));
   }
 
   private void scrollOffset(int more) {
-    myAtEnd = false;
     int val = myScrollPane.getVerticalScrollBar().getValue();
     myScrollPane.getVerticalScrollBar().setValue(val + more);
     myScrollPane.getHorizontalScrollBar().setValue(0);
     if (val + more >=
         myScrollPane.getVerticalScrollBar().getMaximum() - myScrollPane.getVerticalScrollBar().getVisibleAmount()) {
-      myAtEnd = true;
       myLabel.setText(MessageHelper.message("hit.enter.or.type.command.to.continue"));
     }
     else {
       myLabel.setText(MessageHelper.message("ex.output.panel.more"));
     }
-    myLabel.setFont(UiHelper.selectFont(myLabel.getText()));
+    myLabel.setFont(UiHelper.selectEditorFont(myEditor, myLabel.getText()));
+  }
+
+  public boolean isAtEnd() {
+    int val = myScrollPane.getVerticalScrollBar().getValue();
+    return val >=
+           myScrollPane.getVerticalScrollBar().getMaximum() - myScrollPane.getVerticalScrollBar().getVisibleAmount();
   }
 
   private void positionPanel() {
     final JComponent contentComponent = myEditor.getContentComponent();
     Container scroll = SwingUtilities.getAncestorOfClass(JScrollPane.class, contentComponent);
+    JRootPane rootPane = SwingUtilities.getRootPane(contentComponent);
+    if (scroll == null || rootPane == null) {
+      // These might be null if we're invoked during component initialisation and before it's been added to the tree
+      return;
+    }
+
     setSize(scroll.getSize());
 
     myLineHeight = myText.getFontMetrics(myText.getFont()).getHeight();
@@ -273,8 +285,7 @@ public class ExOutputPanel extends JPanel {
     Rectangle bounds = scroll.getBounds();
     bounds.translate(0, scroll.getHeight() - height);
     bounds.height = height;
-    Point pos = SwingUtilities.convertPoint(scroll.getParent(), bounds.getLocation(),
-                                            SwingUtilities.getRootPane(contentComponent).getGlassPane());
+    Point pos = SwingUtilities.convertPoint(scroll.getParent(), bounds.getLocation(), rootPane.getGlassPane());
     bounds.setLocation(pos);
     setBounds(bounds);
 
@@ -288,18 +299,17 @@ public class ExOutputPanel extends JPanel {
     }
   }
 
-  private void close() {
+  public void close() {
     close(null);
   }
 
-  private void close(final @Nullable KeyEvent e) {
+  public void close(final @Nullable KeyStroke key) {
     ApplicationManager.getApplication().invokeLater(() -> {
       deactivate(true);
 
       final Project project = myEditor.getProject();
 
-      if (project != null && e != null && e.getKeyChar() != '\n') {
-        final KeyStroke key = KeyStroke.getKeyStrokeForEvent(e);
+      if (project != null && key != null && key.getKeyChar() != '\n') {
         final List<KeyStroke> keys = new ArrayList<>(1);
         keys.add(key);
         if (LOG.isTrace()) {
@@ -307,8 +317,12 @@ public class ExOutputPanel extends JPanel {
                     KeyHandler.getInstance().getKeyStack().dump());
         }
         KeyHandler.getInstance().getKeyStack().addKeys(keys);
-        ExecutionContext.Editor context = injector.getExecutionContextManager().onEditor(new IjVimEditor(myEditor), null);
-        VimPlugin.getMacro().playbackKeys(new IjVimEditor(myEditor), context, 1);
+        ExecutionContext context =
+          injector.getExecutionContextManager().getEditorExecutionContext(new IjVimEditor(myEditor));
+        injector.getApplication().runWriteAction(() -> {
+          VimPlugin.getMacro().playbackKeys(new IjVimEditor(myEditor), context, 1);
+          return null;
+        });
       }
     });
   }
@@ -325,40 +339,16 @@ public class ExOutputPanel extends JPanel {
      */
     @Override
     public void keyTyped(@NotNull KeyEvent e) {
-      if (myExOutputPanel.myAtEnd) {
-        myExOutputPanel.close(e);
-      }
-      else {
-        switch (e.getKeyChar()) {
-          case ' ':
-            myExOutputPanel.scrollPage();
-            break;
-          case 'd':
-            myExOutputPanel.scrollHalfPage();
-            break;
-          case 'q':
-          case '\u001b':
-            myExOutputPanel.close();
-            break;
-          case '\n':
-            myExOutputPanel.handleEnter();
-            break;
-          case KeyEvent.CHAR_UNDEFINED: {
-            switch (e.getKeyCode()) {
-              case KeyEvent.VK_ENTER:
-                myExOutputPanel.handleEnter();
-                break;
-              case KeyEvent.VK_ESCAPE:
-                myExOutputPanel.close();
-                break;
-              default:
-                myExOutputPanel.badKey();
-            }
-          }
-          default:
-            myExOutputPanel.badKey();
-        }
-      }
+      VimOutputPanel currentPanel = injector.getOutputPanel().getCurrentOutputPanel();
+      if (currentPanel == null) return;
+
+      int keyCode = e.getKeyCode();
+      Character keyChar = e.getKeyChar();
+      int modifiers = e.getModifiersEx();
+      KeyStroke keyStroke = (keyChar == KeyEvent.CHAR_UNDEFINED)
+                            ? KeyStroke.getKeyStroke(keyCode, modifiers)
+                            : KeyStroke.getKeyStroke(keyChar, modifiers);
+      currentPanel.handleKey(keyStroke);
     }
   }
 

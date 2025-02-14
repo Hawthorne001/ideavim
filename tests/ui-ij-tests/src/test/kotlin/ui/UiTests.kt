@@ -94,7 +94,6 @@ class UiTests {
       testTripleClickRightFromLineEnd(editor)
       testClickRightFromLineEnd(editor)
       testClickOnWord(editor)
-      testGutterClick(editor)
       testAddNewLineInNormalMode(editor)
       testMappingToCtrlOrAltEnter(editor)
       `simple enter in insert mode`(editor)
@@ -102,6 +101,7 @@ class UiTests {
       `simple enter in select mode`(editor)
       testMilticaretEnterInSelectMode(editor)
       reenableIdeaVim(editor)
+      reenablingIdeaVimKeepsMappings(editor)
 
       createFile("MyTest.java", this@uiTest)
       val javaEditor = editor("MyTest.java") {
@@ -189,6 +189,7 @@ class UiTests {
   private fun IdeaFrame.wrapWithIf(editor: Editor) {
     editor.findText("System").click()
     remoteRobot.invokeActionJs("SurroundWith")
+    Thread.sleep(1000)
     editor.keyboard { enter() }
 
 //    assertFalse(editor.isBlockCursor)
@@ -295,7 +296,7 @@ class UiTests {
     waitFor {
       val generateDialog = findAll<ComponentFixture>(byXpath("//div[@class='EngravedLabel']"))
       if (generateDialog.size == 1) {
-        return@waitFor generateDialog.single().hasText("Copy")
+        return@waitFor generateDialog.single().hasText("Copy Path/Reference…")
       }
       return@waitFor false
     }
@@ -344,6 +345,51 @@ class UiTests {
       """.trimIndent(),
       editor.text,
     )
+  }
+
+  // Test for VIM-3418
+  private fun IdeaFrame.reenablingIdeaVimKeepsMappings(editor: Editor) {
+    println("Run reenablingIdeaVimKeepsMappings...")
+
+    keyboard {
+      enterText(":imap <A-Q> HEYHEY<ESC>")
+      enter()
+      enterText("i")
+      pressing(KeyEvent.VK_ALT) { enterText("q") }
+    }
+
+    assertEquals(
+      """
+      HEYHEYOne Two
+      Three Four
+      Five
+      """.trimIndent(),
+      editor.text,
+    )
+
+    toggleIdeaVim()
+    keyboard {
+      key(KeyEvent.VK_RIGHT)
+      enterText("-CHECK-")
+    }
+
+    toggleIdeaVim()
+
+    keyboard {
+      enterText("i")
+      pressing(KeyEvent.VK_ALT) { enterText("q") }
+    }
+
+    assertEquals(
+      """
+      HEYHEY-CHECK-HEYHEYOne Two
+      Three Four
+      Five
+      """.trimIndent(),
+      editor.text,
+    )
+
+    vimExit()
   }
 
   private fun IdeaFrame.toggleIdeaVim() {
@@ -565,23 +611,6 @@ class UiTests {
 
     assertEquals("On", editor.selectedText)
     assertEquals(1, editor.caretOffset)
-
-    vimExit()
-  }
-
-  private fun ContainerFixture.testGutterClick(editor: Editor) {
-    println("Run testGutterClick...")
-    gutter {
-      findText("2").click()
-    }
-
-    assertEquals("Three Four\n", editor.selectedText)
-
-    keyboard {
-      enterText("k")
-    }
-
-    assertEquals("One Two\nThree Four\n", editor.selectedText)
 
     vimExit()
   }

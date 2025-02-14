@@ -23,7 +23,6 @@ import org.junit.jupiter.api.TestInfo
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-@Suppress("SpellCheckingInspection")
 @TestWithoutNeovim(reason = SkipNeovimReason.OPTION)
 class SetglobalCommandTest : VimTestCase() {
 
@@ -34,6 +33,7 @@ class SetglobalCommandTest : VimTestCase() {
   }
 
   private fun setOsSpecificOptionsToSafeValues() {
+    enterCommand("setglobal fileformat=unix")
     enterCommand("setglobal shell=/dummy/path/to/bash")
     enterCommand("setglobal shellcmdflag=-x")
     enterCommand("setglobal shellxescape=@")
@@ -57,20 +57,20 @@ class SetglobalCommandTest : VimTestCase() {
   @Test
   fun `test set toggle option global value`() {
     enterCommand("setglobal rnu")
-    assertCommandOutput("setglobal rnu?", "  relativenumber\n")
-    assertCommandOutput("setlocal rnu?", "norelativenumber\n")
+    assertCommandOutput("setglobal rnu?", "  relativenumber")
+    assertCommandOutput("setlocal rnu?", "norelativenumber")
 
     enterCommand("setglobal nornu")
-    assertCommandOutput("setglobal rnu?", "norelativenumber\n")
-    assertCommandOutput("setlocal rnu?", "norelativenumber\n")
+    assertCommandOutput("setglobal rnu?", "norelativenumber")
+    assertCommandOutput("setlocal rnu?", "norelativenumber")
 
     enterCommand("setglobal rnu!")
-    assertCommandOutput("setglobal rnu?", "  relativenumber\n")
-    assertCommandOutput("setlocal rnu?", "norelativenumber\n")
+    assertCommandOutput("setglobal rnu?", "  relativenumber")
+    assertCommandOutput("setlocal rnu?", "norelativenumber")
 
     enterCommand("setglobal invrnu")
-    assertCommandOutput("setglobal rnu?", "norelativenumber\n")
-    assertCommandOutput("setlocal rnu?", "norelativenumber\n")
+    assertCommandOutput("setglobal rnu?", "norelativenumber")
+    assertCommandOutput("setlocal rnu?", "norelativenumber")
   }
 
   @Test
@@ -110,20 +110,50 @@ class SetglobalCommandTest : VimTestCase() {
 
   @Test
   fun `test show toggle option global value`() {
-    assertCommandOutput("setglobal rnu?", "norelativenumber\n")
+    assertCommandOutput("setglobal rnu?", "norelativenumber")
 
     enterCommand("setglobal invrnu")
-    assertCommandOutput("setglobal rnu?", "  relativenumber\n")
+    assertCommandOutput("setglobal rnu?", "  relativenumber")
+  }
+
+  @Test
+  fun `test reset global toggle option value to default value`() {
+    enterCommand("setglobal rnu") // Local option, global value
+    assertCommandOutput("setglobal rnu?", "  relativenumber")
+
+    enterCommand("setglobal rnu&")
+    assertCommandOutput("setglobal rnu?", "norelativenumber")
   }
 
   @Test
   fun `test reset global toggle option value to global value does nothing`() {
-    enterCommand("setglobal relativenumber") // Default global value is off
-    assertCommandOutput("setglobal rnu?", "  relativenumber\n")
+    enterCommand("setglobal relativenumber") // Local option, global value
+    assertCommandOutput("setglobal rnu?", "  relativenumber")
 
     // Copies the global value to itself, doesn't change anything
     enterCommand("setglobal relativenumber<")
-    assertCommandOutput("setglobal rnu?", "  relativenumber\n")
+    assertCommandOutput("setglobal rnu?", "  relativenumber")
+  }
+
+  @Test
+  fun `test reset global-local toggle option to default value`() {
+    val option = ToggleOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", false)
+    try {
+      injector.optionGroup.addOption(option)
+
+      enterCommand("setglobal test")
+      enterCommand("setlocal notest")
+      assertCommandOutput("setglobal test?", "  test")
+      assertCommandOutput("setlocal test?", "notest")
+
+      // Reset global value to default
+      enterCommand("setglobal test&")
+
+      assertCommandOutput("setglobal test?", "notest")
+      assertCommandOutput("setlocal test?", "notest")
+    } finally {
+      injector.optionGroup.removeOption(option.name)
+    }
   }
 
   @Test
@@ -133,52 +163,45 @@ class SetglobalCommandTest : VimTestCase() {
       injector.optionGroup.addOption(option)
 
       enterCommand("setglobal test")
-      assertCommandOutput("setglobal test?", "  test\n")
+      enterCommand("setlocal notest")
+      assertCommandOutput("setglobal test?", "  test")
+      assertCommandOutput("setlocal test?", "notest")
 
       // Copies the global value to the target scope (i.e. global, this is a no-op)
       enterCommand("setglobal test<")
 
-      assertCommandOutput("setglobal test?", "  test\n")
-    }
-    finally {
+      assertCommandOutput("setglobal test?", "  test")
+      assertCommandOutput("setlocal test?", "notest")
+    } finally {
       injector.optionGroup.removeOption(option.name)
     }
   }
 
   @Test
-  fun `test reset toggle option to default value`() {
-    enterCommand("setglobal rnu")
-    assertCommandOutput("setglobal rnu?", "  relativenumber\n")
-
-    enterCommand("setglobal rnu&")
-    assertCommandOutput("setglobal rnu?", "norelativenumber\n")
-  }
-
-  @Test
   fun `test set number option global value`() {
     enterCommand("setglobal scroll&")
-    assertCommandOutput("setglobal scroll?", "  scroll=0\n")
-    assertCommandOutput("setlocal scroll?", "  scroll=0\n")
+    assertCommandOutput("setglobal scroll?", "  scroll=0")
+    assertCommandOutput("setlocal scroll?", "  scroll=0")
 
     enterCommand("setglobal scroll=5")
-    assertCommandOutput("setglobal scroll?", "  scroll=5\n")
-    assertCommandOutput("setlocal scroll?", "  scroll=0\n")
+    assertCommandOutput("setglobal scroll?", "  scroll=5")
+    assertCommandOutput("setlocal scroll?", "  scroll=0")
 
     enterCommand("setglobal scroll:10")
-    assertCommandOutput("setglobal scroll?", "  scroll=10\n")
-    assertCommandOutput("setlocal scroll?", "  scroll=0\n")
+    assertCommandOutput("setglobal scroll?", "  scroll=10")
+    assertCommandOutput("setlocal scroll?", "  scroll=0")
 
     enterCommand("setglobal scroll+=5")
-    assertCommandOutput("setglobal scroll?", "  scroll=15\n")
-    assertCommandOutput("setlocal scroll?", "  scroll=0\n")
+    assertCommandOutput("setglobal scroll?", "  scroll=15")
+    assertCommandOutput("setlocal scroll?", "  scroll=0")
 
     enterCommand("setglobal scroll-=10")
-    assertCommandOutput("setglobal scroll?", "  scroll=5\n")
-    assertCommandOutput("setlocal scroll?", "  scroll=0\n")
+    assertCommandOutput("setglobal scroll?", "  scroll=5")
+    assertCommandOutput("setlocal scroll?", "  scroll=0")
 
     enterCommand("setglobal scroll^=2")
-    assertCommandOutput("setglobal scroll?", "  scroll=10\n")
-    assertCommandOutput("setlocal scroll?", "  scroll=0\n")
+    assertCommandOutput("setglobal scroll?", "  scroll=10")
+    assertCommandOutput("setlocal scroll?", "  scroll=0")
   }
 
   @Test
@@ -203,38 +226,69 @@ class SetglobalCommandTest : VimTestCase() {
   @Test
   fun `test show number option global value`() {
     enterCommand("setglobal scroll=10")
-    assertCommandOutput("setglobal scroll?", "  scroll=10\n")
+    assertCommandOutput("setglobal scroll?", "  scroll=10")
   }
 
   @Test
   fun `test number option with no arguments shows current global value`() {
     enterCommand("setglobal scroll=10")
-    assertCommandOutput("setglobal scroll", "  scroll=10\n")
+    assertCommandOutput("setglobal scroll", "  scroll=10")
   }
 
   @Test
-  fun `test reset global number option value to global value does nothing`() {
+  fun `test reset number global option value to default value`() {
+    enterCommand("setglobal scroll=10")  // Default global value is 0
+
+    enterCommand("setglobal scroll&")
+    assertCommandOutput("setglobal scroll?", "  scroll=0")
+  }
+
+  @Test
+  fun `test reset number global option value to global value does nothing`() {
     enterCommand("setglobal scroll=10")  // Default global value is 0
 
     enterCommand("setglobal scroll<")
-    assertCommandOutput("setglobal scroll?", "  scroll=10\n")
+    assertCommandOutput("setglobal scroll?", "  scroll=10")
   }
 
   @Test
-  fun `test reset global-local number option to global value does nothing`() {
+  fun `test reset number global-local option to default value`() {
     val option = NumberOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", 10)
     try {
       injector.optionGroup.addOption(option)
 
       enterCommand("setglobal test=20")
-      assertCommandOutput("setglobal test?", "  test=20\n")
+      enterCommand("setlocal test=30")
+      assertCommandOutput("setglobal test?", "  test=20")
+      assertCommandOutput("setlocal test?", "  test=30")
 
-      // setglobal {option}< copies the global value to the local value
+      // setglobal {option}< copies the global value to the target scope
+      enterCommand("setglobal test&")
+
+      assertCommandOutput("setglobal test?", "  test=10")
+      assertCommandOutput("setlocal test?", "  test=30")
+    } finally {
+      injector.optionGroup.removeOption(option.name)
+    }
+  }
+
+  @Test
+  fun `test reset number global-local option to global value does nothing`() {
+    val option = NumberOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", 10)
+    try {
+      injector.optionGroup.addOption(option)
+
+      enterCommand("setglobal test=20")
+      enterCommand("setlocal test=30")
+      assertCommandOutput("setglobal test?", "  test=20")
+      assertCommandOutput("setlocal test?", "  test=30")
+
+      // setglobal {option}< copies the global value to the target scope
       enterCommand("setglobal test<")
 
-      assertCommandOutput("setglobal test?", "  test=20\n")
-    }
-    finally {
+      assertCommandOutput("setglobal test?", "  test=20")
+      assertCommandOutput("setlocal test?", "  test=30")
+    } finally {
       injector.optionGroup.removeOption(option.name)
     }
   }
@@ -242,24 +296,24 @@ class SetglobalCommandTest : VimTestCase() {
   @Test
   fun `test set string option global value`() {
     enterCommand("setglobal nrformats=octal")
-    assertCommandOutput("setglobal nrformats", "  nrformats=octal\n")
-    assertCommandOutput("setlocal nrformats", "  nrformats=hex\n")
+    assertCommandOutput("setglobal nrformats", "  nrformats=octal")
+    assertCommandOutput("setlocal nrformats", "  nrformats=hex")
 
     enterCommand("setglobal nrformats:alpha")
-    assertCommandOutput("setglobal nrformats", "  nrformats=alpha\n")
-    assertCommandOutput("setlocal nrformats", "  nrformats=hex\n")
+    assertCommandOutput("setglobal nrformats", "  nrformats=alpha")
+    assertCommandOutput("setlocal nrformats", "  nrformats=hex")
 
     enterCommand("setglobal nrformats+=hex")
-    assertCommandOutput("setglobal nrformats", "  nrformats=alpha,hex\n")
-    assertCommandOutput("setlocal nrformats", "  nrformats=hex\n")
+    assertCommandOutput("setglobal nrformats", "  nrformats=alpha,hex")
+    assertCommandOutput("setlocal nrformats", "  nrformats=hex")
 
     enterCommand("setglobal nrformats-=hex")
-    assertCommandOutput("setglobal nrformats", "  nrformats=alpha\n")
-    assertCommandOutput("setlocal nrformats", "  nrformats=hex\n")
+    assertCommandOutput("setglobal nrformats", "  nrformats=alpha")
+    assertCommandOutput("setlocal nrformats", "  nrformats=hex")
 
     enterCommand("setglobal nrformats^=hex")
-    assertCommandOutput("setglobal nrformats", "  nrformats=hex,alpha\n")
-    assertCommandOutput("setlocal nrformats", "  nrformats=hex\n")
+    assertCommandOutput("setglobal nrformats", "  nrformats=hex,alpha")
+    assertCommandOutput("setlocal nrformats", "  nrformats=hex")
   }
 
   @Test
@@ -283,36 +337,63 @@ class SetglobalCommandTest : VimTestCase() {
 
   @Test
   fun `test show string option global value`() {
-    assertCommandOutput("setglobal nrformats?", "  nrformats=hex\n")
+    assertCommandOutput("setglobal nrformats?", "  nrformats=hex")
 
     enterCommand("setglobal nrformats+=alpha")
-    assertCommandOutput("setglobal nrformats?", "  nrformats=hex,alpha\n")
+    assertCommandOutput("setglobal nrformats?", "  nrformats=hex,alpha")
   }
 
   @Test
   fun `test string option with no arguments shows current global value`() {
-    assertCommandOutput("setglobal nrformats", "  nrformats=hex\n")
+    assertCommandOutput("setglobal nrformats", "  nrformats=hex")
   }
 
   @Test
-  fun `test reset global string option value to global value does nothing`() {
+  fun `test reset string global option value to default value`() {
+    enterCommand("setglobal nrformats=alpha")
+    enterCommand("setglobal nrformats&")
+    assertCommandOutput("setglobal nrformats?", "  nrformats=hex")
+  }
+
+  @Test
+  fun `test reset string global option value to global value does nothing`() {
     enterCommand("setglobal nrformats=alpha")
     enterCommand("setglobal nrformats<")
-    assertCommandOutput("setglobal nrformats?", "  nrformats=alpha\n")
+    assertCommandOutput("setglobal nrformats?", "  nrformats=alpha")
   }
 
   @Test
-  fun `test reset global-local string option to global value does nothing`() {
+  fun `test reset string global-local option to default value`() {
     val option = StringOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", "testValue")
     try {
       injector.optionGroup.addOption(option)
 
-      // Copies the global value to the target scope (i.e. global, this is a no-op)
-      enterCommand("setlocal test<")
+      enterCommand("setglobal test=globalValue")
+      enterCommand("setlocal test=localValue")
 
-      assertCommandOutput("setlocal test?", "  test=testValue\n")
+      // Copies the default value to the target scope
+      enterCommand("setglobal test&")
+
+      assertCommandOutput("setglobal test?", "  test=testValue")
+    } finally {
+      injector.optionGroup.removeOption(option.name)
     }
-    finally {
+  }
+
+  @Test
+  fun `test reset string global-local option to global value does nothing`() {
+    val option = StringOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", "testValue")
+    try {
+      injector.optionGroup.addOption(option)
+
+      enterCommand("setglobal test=globalValue")
+      enterCommand("setlocal test=localValue")
+
+      // Copies the global value to the target scope (i.e. global, this is a no-op)
+      enterCommand("setglobal test<")
+
+      assertCommandOutput("setglobal test?", "  test=globalValue")
+    } finally {
       injector.optionGroup.removeOption(option.name)
     }
   }
@@ -321,47 +402,52 @@ class SetglobalCommandTest : VimTestCase() {
   fun `test reset string option to default value`() {
     enterCommand("setglobal nrformats=alpha")
     enterCommand("setglobal nrformats&")
-    assertCommandOutput("setglobal nrformats?", "  nrformats=hex\n")
+    assertCommandOutput("setglobal nrformats?", "  nrformats=hex")
   }
 
   @Test
   fun `test show all modified global option values`() {
-    assertCommandOutput("setglobal", """
+    assertCommandOutput(
+      "setglobal", """
       |--- Global option values ---
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show all modified global option values 2`() {
     enterCommand("setglobal number relativenumber scrolloff=10 nrformats=alpha,hex,octal sidescrolloff=10")
-    assertCommandOutput("setglobal", """
+    assertCommandOutput(
+      "setglobal", """
       |--- Global option values ---
       |  number              relativenumber      scrolloff=10        sidescrolloff=10
       |  nrformats=alpha,hex,octal
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show all global option values`() {
     setOsSpecificOptionsToSafeValues()
-    assertCommandOutput("setglobal all", """
+    assertCommandOutput(
+      "setglobal all", """
       |--- Global option values ---
-      |noargtextobj        noincsearch           selectmode=       notextobj-indent
-      |nocommentary        nomatchit             shellcmdflag=-x     timeout
-      |nodigraph             maxmapdepth=20      shellxescape=@      timeoutlen=1000
-      |noexchange            more                shellxquote={     notrackactionids
-      |nogdefault          nomultiple-cursors    showcmd             undolevels=1000
-      |nohighlightedyank   noNERDTree            showmode            virtualedit=
-      |  history=50          nrformats=hex       sidescroll=0      novisualbell
-      |nohlsearch          nonumber              sidescrolloff=0     visualdelay=100
-      |noideaglobalmode      operatorfunc=     nosmartcase           whichwrap=b,s
-      |noideajoin          norelativenumber    nosneak               wrapscan
-      |  ideamarks           scroll=0            startofline
-      |  ideawrite=all       scrolljump=1      nosurround
-      |noignorecase          scrolloff=0       notextobj-entire
-      |  clipboard=ideaput,autoselect,exclude:cons\|linux
+      |noargtextobj          ideamarks           scroll=0          notextobj-entire
+      |nobomb                ideawrite=all       scrolljump=1      notextobj-indent
+      |nobreakindent       noignorecase          scrolloff=0         textwidth=0
+      |  colorcolumn=      noincsearch           selectmode=         timeout
+      |nocommentary        nolist                shellcmdflag=-x     timeoutlen=1000
+      |nocursorline        nomatchit             shellxescape=@    notrackactionids
+      |nodigraph             maxmapdepth=20      shellxquote={       undolevels=1000
+      |noexchange          nomini-ai             showcmd             virtualedit=
+      |  fileencoding=       more                showmode          novisualbell
+      |  fileformat=unix   nomultiple-cursors    sidescroll=0        visualdelay=100
+      |nogdefault          noNERDTree            sidescrolloff=0     whichwrap=b,s
+      |nohighlightedyank     nrformats=hex     nosmartcase           wrap
+      |  history=50        nonumber            nosneak               wrapscan
+      |nohlsearch            operatorfunc=       startofline
+      |noideajoin          norelativenumber    nosurround
+      |  clipboard=ideaput,autoselect
       |  guicursor=n-v-c:block-Cursor/lCursor,ve:ver35-Cursor,o:hor50-Cursor,i-ci:ver25-Cursor/lCursor,r-cr:hor20-Cursor/lCursor,sm:block-Cursor-blinkwait175-blinkoff150-blinkon175
       |  ide=IntelliJ IDEA Community Edition
       |noideacopypreprocess
@@ -377,50 +463,60 @@ class SetglobalCommandTest : VimTestCase() {
       |  shell=/dummy/path/to/bash
       |novim-paragraph-motion
       |  viminfo='100,<50,s10,h
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show named options`() {
-    assertCommandOutput("setglobal number? relativenumber? scrolloff? nrformats?", """
+    assertCommandOutput(
+      "setglobal number? relativenumber? scrolloff? nrformats?", """
       |  nrformats=hex     nonumber            norelativenumber      scrolloff=0
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show all modified global option values in single column`() {
-    assertCommandOutput("setglobal!", """
+    assertCommandOutput(
+      "setglobal!", """
       |--- Global option values ---
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show all modified global option values in single column 2`() {
     enterCommand("setglobal number relativenumber scrolloff=10 nrformats=alpha,hex,octal sidescrolloff=10")
-    assertCommandOutput("setglobal!", """
+    assertCommandOutput(
+      "setglobal!", """
       |--- Global option values ---
       |  nrformats=alpha,hex,octal
       |  number
       |  relativenumber
       |  scrolloff=10
       |  sidescrolloff=10
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show all global option values in single column`() {
     setOsSpecificOptionsToSafeValues()
-    assertCommandOutput("setglobal! all", """
+    assertCommandOutput(
+      "setglobal! all", """
       |--- Global option values ---
       |noargtextobj
-      |  clipboard=ideaput,autoselect,exclude:cons\|linux
+      |nobomb
+      |nobreakindent
+      |  clipboard=ideaput,autoselect
+      |  colorcolumn=
       |nocommentary
+      |nocursorline
       |nodigraph
       |noexchange
+      |  fileencoding=
+      |  fileformat=unix
       |nogdefault
       |  guicursor=n-v-c:block-Cursor/lCursor,ve:ver35-Cursor,o:hor50-Cursor,i-ci:ver25-Cursor/lCursor,r-cr:hor20-Cursor/lCursor,sm:block-Cursor-blinkwait175-blinkoff150-blinkon175
       |nohighlightedyank
@@ -428,7 +524,6 @@ class SetglobalCommandTest : VimTestCase() {
       |nohlsearch
       |  ide=IntelliJ IDEA Community Edition
       |noideacopypreprocess
-      |noideaglobalmode
       |noideajoin
       |  ideamarks
       |  idearefactormode=select
@@ -439,10 +534,12 @@ class SetglobalCommandTest : VimTestCase() {
       |noincsearch
       |  iskeyword=@,48-57,_
       |  keymodel=continueselect,stopselect
+      |nolist
       |  lookupkeys=<Tab>,<Down>,<Up>,<Enter>,<Left>,<Right>,<C-Down>,<C-Up>,<PageUp>,<PageDown>,<C-J>,<C-Q>
       |nomatchit
       |  matchpairs=(:),{:},[:]
       |  maxmapdepth=20
+      |nomini-ai
       |  more
       |nomultiple-cursors
       |noNERDTree
@@ -470,6 +567,7 @@ class SetglobalCommandTest : VimTestCase() {
       |nosurround
       |notextobj-entire
       |notextobj-indent
+      |  textwidth=0
       |  timeout
       |  timeoutlen=1000
       |notrackactionids
@@ -480,19 +578,21 @@ class SetglobalCommandTest : VimTestCase() {
       |novisualbell
       |  visualdelay=100
       |  whichwrap=b,s
+      |  wrap
       |  wrapscan
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show named options in single column`() {
-    assertCommandOutput("setglobal! number? relativenumber? scrolloff? nrformats?", """
+    assertCommandOutput(
+      "setglobal! number? relativenumber? scrolloff? nrformats?", """
       |  nrformats=hex
       |nonumber
       |norelativenumber
       |  scrolloff=0
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 }

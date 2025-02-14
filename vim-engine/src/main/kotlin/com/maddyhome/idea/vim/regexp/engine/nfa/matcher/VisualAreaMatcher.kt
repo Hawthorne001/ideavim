@@ -8,11 +8,9 @@
 
 package com.maddyhome.idea.vim.regexp.engine.nfa.matcher
 
-import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.VimCaret
-import com.maddyhome.idea.vim.api.injector
+import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.regexp.match.VimMatchGroupCollection
-import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.inVisualMode
 
 /**
@@ -21,21 +19,18 @@ import com.maddyhome.idea.vim.state.mode.inVisualMode
 internal class VisualAreaMatcher : Matcher {
   override fun matches(
     editor: VimEditor,
-    index: Int, groups:
+    index: Int,
+    groups:
     VimMatchGroupCollection,
     isCaseInsensitive: Boolean,
-    possibleCursors: MutableList<VimCaret>
+    possibleCursors: MutableList<VimCaret>,
   ): MatcherResult {
-    val processGroup = injector.processGroup
     val newPossibleCursors = if (editor.inVisualMode) {
       possibleCursors.filter { it.hasSelection() && index >= it.selectionStart && index < it.selectionEnd }
     }
     // IdeaVim exits visual mode before command processing (e.g. substitute), so we work with lastSelectionInfo
-    else if ((processGroup.isCommandProcessing || injector.vimscriptExecutor.executingVimscript)
-      && processGroup.modeBeforeCommandProcessing is Mode.VISUAL) {
+    else {
       possibleCursors.filter { it.lastSelectionInfo.isSelected(index, editor) }
-    } else {
-      emptyList()
     }
 
     return if (newPossibleCursors.isNotEmpty()) {

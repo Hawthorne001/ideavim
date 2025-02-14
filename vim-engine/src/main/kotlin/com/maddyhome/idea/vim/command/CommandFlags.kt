@@ -12,18 +12,18 @@ package com.maddyhome.idea.vim.command
  * Vim defines three types of motions. These types mostly affect the behaviour of `d` command and friends.
  * The type of the motion can be found in vim documentation for this motion.
  */
-public enum class MotionType {
+enum class MotionType {
   INCLUSIVE,
   EXCLUSIVE,
   LINE_WISE,
 }
 
-public enum class TextObjectVisualType {
+enum class TextObjectVisualType {
   CHARACTER_WISE,
   LINE_WISE,
 }
 
-public enum class CommandFlags {
+enum class CommandFlags {
   /**
    * Motion flags
    *
@@ -68,19 +68,13 @@ public enum class CommandFlags {
    */
   FLAG_EXPECT_MORE,
 
-  /**
-   * Indicate that the character argument may come from a digraph
-   */
-  FLAG_ALLOW_DIGRAPH,
-
-  /**
-   * Indicates that a command handles completing ex input.
-   *
-   * When performing a search, the search action command requires an EX_STRING as input. This is completed by a command
-   * that has FLAG_COMPLETE_EX. That command isn't called and the ex string becomes an argument for the previous command
-   * that started the EX_STRING.
-   */
-  FLAG_COMPLETE_EX,
+  FLAG_START_EX,
+  FLAG_END_EX,
 
   FLAG_TEXT_BLOCK,
+
+  /**
+   * TODO come up with a better solution
+   */
+  FLAG_UNDO_AWARE,
 }

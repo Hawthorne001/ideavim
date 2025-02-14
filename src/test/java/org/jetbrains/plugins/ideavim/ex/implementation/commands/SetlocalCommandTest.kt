@@ -24,7 +24,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-@Suppress("SpellCheckingInspection")
 @TestWithoutNeovim(reason = SkipNeovimReason.OPTION)
 class SetlocalCommandTest : VimTestCase() {
 
@@ -58,16 +57,16 @@ class SetlocalCommandTest : VimTestCase() {
   @Test
   fun `test set toggle option local value`() {
     enterCommand("setlocal rnu")
-    assertTrue(options().relativenumber)  // Tests effective (i.e. local) value
+    assertTrue(optionsIj().relativenumber)  // Tests effective (i.e. local) value
 
     enterCommand("setlocal nornu")
-    assertFalse(options().relativenumber)
+    assertFalse(optionsIj().relativenumber)
 
     enterCommand("setlocal rnu!")
-    assertTrue(options().relativenumber)
+    assertTrue(optionsIj().relativenumber)
 
     enterCommand("setlocal invrnu")
-    assertFalse(options().relativenumber)
+    assertFalse(optionsIj().relativenumber)
   }
 
   @Test
@@ -107,11 +106,11 @@ class SetlocalCommandTest : VimTestCase() {
 
   @Test
   fun `test show toggle option local value`() {
-    assertCommandOutput("setlocal rnu?", "norelativenumber\n")
+    assertCommandOutput("setlocal rnu?", "norelativenumber")
 
     enterCommand("setlocal invrnu")
 
-    assertCommandOutput("setlocal rnu?", "  relativenumber\n")
+    assertCommandOutput("setlocal rnu?", "  relativenumber")
   }
 
   @Test
@@ -120,20 +119,52 @@ class SetlocalCommandTest : VimTestCase() {
     try {
       injector.optionGroup.addOption(option)
 
-      assertCommandOutput("setlocal test?", "--test\n")
-    }
-    finally {
+      assertCommandOutput("setlocal test?", "--test")
+    } finally {
       injector.optionGroup.removeOption(option.name)
     }
   }
 
   @Test
-  fun `test reset local toggle option value to global value`() {
+  fun `test reset local toggle option value to default value`() {
     enterCommand("setlocal relativenumber") // Default global value is off
-    assertTrue(options().relativenumber)
+    assertCommandOutput("setglobal rnu?", "norelativenumber")
+    assertCommandOutput("setlocal rnu?", "  relativenumber")
+
+    enterCommand("setlocal relativenumber&")
+    assertCommandOutput("setglobal rnu?", "norelativenumber")
+    assertCommandOutput("setlocal rnu?", "norelativenumber")
+  }
+
+  @Test
+  fun `test reset local toggle option value to global value`() {
+    enterCommand("setlocal relativenumber")
+    assertCommandOutput("setglobal rnu?", "norelativenumber")
+    assertCommandOutput("setlocal rnu?", "  relativenumber")
 
     enterCommand("setlocal relativenumber<")
-    assertFalse(options().relativenumber)
+    assertCommandOutput("setglobal rnu?", "norelativenumber")
+    assertCommandOutput("setlocal rnu?", "norelativenumber")
+  }
+
+  @Test
+  fun `test reset global-local toggle option to default value`() {
+    val option = ToggleOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", false)
+    try {
+      injector.optionGroup.addOption(option)
+
+      enterCommand("setlocal test")
+      assertCommandOutput("setglobal test?", "notest")
+      assertCommandOutput("setlocal test?", "  test")
+
+      // Reset local value to default
+      enterCommand("setlocal test&")
+
+      assertCommandOutput("setglobal test?", "notest")
+      assertCommandOutput("setlocal test?", "notest")
+    } finally {
+      injector.optionGroup.removeOption(option.name)
+    }
   }
 
   @Test
@@ -143,25 +174,20 @@ class SetlocalCommandTest : VimTestCase() {
       injector.optionGroup.addOption(option)
 
       enterCommand("setlocal test")
+      assertCommandOutput("setglobal test?", "notest")
+      assertCommandOutput("setlocal test?", "  test")
 
-      assertCommandOutput("setlocal test?", "  test\n")
+      // Vim's docs state this should copy global value to local scope, but it actually unsets the value instead. Use
+      // `:set {option}<` to copy global value to local
+      // This only seems to apply for number-based options (including toggle options)
+      // https://github.com/vim/vim/issues/14062
+      enterCommand("setlocal test<")
 
-      enterCommand("setlocal test<")  // setlocal {option}< copies the global value to the local value
-
-      assertCommandOutput("setlocal test?", "notest\n")
-    }
-    finally {
+      assertCommandOutput("setglobal test?", "notest")
+      assertCommandOutput("setlocal test?", "--test")
+    } finally {
       injector.optionGroup.removeOption(option.name)
     }
-  }
-
-  @Test
-  fun `test reset toggle option to default value`() {
-    enterCommand("setlocal rnu")
-    assertTrue(options().relativenumber)  // Tests effective (i.e. local) value
-
-    enterCommand("setlocal rnu&")
-    assertFalse(options().relativenumber)
   }
 
   @Test
@@ -206,16 +232,16 @@ class SetlocalCommandTest : VimTestCase() {
 
   @Test
   fun `test show number option local value`() {
-    assertCommandOutput("setlocal scroll?", "  scroll=0\n")
+    assertCommandOutput("setlocal scroll?", "  scroll=0")
 
     enterCommand("setlocal scroll=10")
 
-    assertCommandOutput("setlocal scroll?", "  scroll=10\n")
+    assertCommandOutput("setlocal scroll?", "  scroll=10")
   }
 
   @Test
   fun `test number option with no arguments shows current local value`() {
-    assertCommandOutput("setlocal scroll", "  scroll=0\n")
+    assertCommandOutput("setlocal scroll", "  scroll=0")
   }
 
   @Test
@@ -224,36 +250,71 @@ class SetlocalCommandTest : VimTestCase() {
     try {
       injector.optionGroup.addOption(option)
 
-      assertCommandOutput("setlocal test?", "  test=-1\n")
-    }
-    finally {
+      assertCommandOutput("setlocal test?", "  test=-1")
+    } finally {
       injector.optionGroup.removeOption(option.name)
     }
   }
 
   @Test
-  fun `test reset local number option value to global value`() {
-    enterCommand("setlocal scroll=10")  // Default global value is 0
+  fun `test reset number local option value to default value`() {
+    enterCommand("setlocal scroll=10")
 
-    enterCommand("setlocal scroll<")
-    assertEquals(0, options().scroll)
+    enterCommand("setlocal scroll&")
+    assertCommandOutput("setlocal scroll?", "  scroll=0")
   }
 
   @Test
-  fun `test reset global-local number option to global value`() {
+  fun `test reset number local option value to global value`() {
+    enterCommand("setlocal scroll=10")  // Default global value is 0
+
+    enterCommand("setlocal scroll<")
+    assertCommandOutput("setlocal scroll?", "  scroll=0")
+  }
+
+  @Test
+  fun `test reset number global-local option to default value`() {
     val option = NumberOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", 10)
     try {
       injector.optionGroup.addOption(option)
 
+      enterCommand("setglobal test=15")
       enterCommand("setlocal test=20")
 
-      assertCommandOutput("setlocal test?", "  test=20\n")
+      assertCommandOutput("setglobal test?", "  test=15")
+      assertCommandOutput("setlocal test?", "  test=20")
 
-      enterCommand("setlocal test<")  // setlocal {option}< copies the global value to the local value
+      // Reset local value to default
+      enterCommand("setlocal test&")
 
-      assertCommandOutput("setlocal test?", "  test=10\n")
+      assertCommandOutput("setglobal test?", "  test=15")
+      assertCommandOutput("setlocal test?", "  test=10")
+    } finally {
+      injector.optionGroup.removeOption(option.name)
     }
-    finally {
+  }
+
+  @Test
+  fun `test reset number global-local option to global value`() {
+    val option = NumberOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", 10)
+    try {
+      injector.optionGroup.addOption(option)
+
+      enterCommand("setglobal test=15")
+      enterCommand("setlocal test=20")
+
+      assertCommandOutput("setglobal test?", "  test=15")
+      assertCommandOutput("setlocal test?", "  test=20")
+
+      // Vim's docs state this should copy global value to local scope, but it actually unsets the value instead. Use
+      // `:set {option}<` to copy global value to local
+      // This only seems to apply for number-based options (including toggle options)
+      // https://github.com/vim/vim/issues/14062
+      enterCommand("setlocal test<")
+
+      assertCommandOutput("setglobal test?", "  test=15")
+      assertCommandOutput("setlocal test?", "  test=-1")
+    } finally {
       injector.optionGroup.removeOption(option.name)
     }
   }
@@ -297,104 +358,148 @@ class SetlocalCommandTest : VimTestCase() {
 
   @Test
   fun `test show string option local value`() {
-    assertCommandOutput("setlocal nrformats?", "  nrformats=hex\n")
+    assertCommandOutput("setlocal nrformats?", "  nrformats=hex")
 
     enterCommand("setlocal nrformats+=alpha")
 
-    assertCommandOutput("setlocal nrformats?", "  nrformats=hex,alpha\n")
+    assertCommandOutput("setlocal nrformats?", "  nrformats=hex,alpha")
   }
 
   @Test
   fun `test string option with no arguments shows current local value`() {
-    assertCommandOutput("setlocal nrformats", "  nrformats=hex\n")
+    assertCommandOutput("setlocal nrformats", "  nrformats=hex")
   }
 
   @Test
-  fun `test show unset global-local string option value`() {
+  fun `test show unset string global-local option value`() {
     val option = StringOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", "testValue")
     try {
       injector.optionGroup.addOption(option)
 
-      assertCommandOutput("setlocal test?", "  test=\n")
-    }
-    finally {
+      assertCommandOutput("setlocal test?", "  test=")
+    } finally {
       injector.optionGroup.removeOption(option.name)
     }
   }
 
   @Test
-  fun `test reset local string option value to global value`() {
-    enterCommand("setlocal nrformats=alpha")
-    enterCommand("setlocal nrformats<")
-    assertEquals("hex", options().nrformats.value)
-  }
-
-  @Test
-  fun `test reset global-local string option to global value`() {
-    val option = StringOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", "testValue")
-    try {
-      injector.optionGroup.addOption(option)
-
-      enterCommand("setlocal test<")
-
-      assertCommandOutput("setlocal test?", "  test=testValue\n")
-    }
-    finally {
-      injector.optionGroup.removeOption(option.name)
-    }
-  }
-
-  @Test
-  fun `test reset string option to default value`() {
+  fun `test reset string local option value to default value`() {
     enterCommand("setlocal nrformats=alpha")
     enterCommand("setlocal nrformats&")
-    assertEquals("hex", options().nrformats.value)
+    assertCommandOutput("setlocal nrformats?", "  nrformats=hex")
+  }
+
+  @Test
+  fun `test reset string local option value to global value`() {
+    enterCommand("setlocal nrformats=alpha")
+    enterCommand("setlocal nrformats<")
+    assertCommandOutput("setlocal nrformats?", "  nrformats=hex")
+  }
+
+  @Test
+  fun `test reset string global-local option to default value`() {
+    val option = StringOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", "testValue")
+    try {
+      injector.optionGroup.addOption(option)
+
+      enterCommand("setglobal test=globalValue")
+      enterCommand("setlocal test=localValue")
+
+      // Copies the default value to target scope
+      enterCommand("setlocal test&")
+
+      assertCommandOutput("setglobal test?", "  test=globalValue")
+      assertCommandOutput("setlocal test?", "  test=testValue")
+    } finally {
+      injector.optionGroup.removeOption(option.name)
+    }
+  }
+
+  @Test
+  fun `test reset string global-local option to global value`() {
+    val option = StringOption("test", OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW, "test", "testValue")
+    try {
+      injector.optionGroup.addOption(option)
+
+      enterCommand("setglobal test=globalValue")
+      enterCommand("setlocal test=localValue")
+
+      // Copies the global value to target scope
+      // Note that this is different behaviour to `:setlocal {option}<` when option is a number-based global-local. For
+      // string values, this matches the documented behaviour. For number-based options, the docs are reversed.
+      // https://github.com/vim/vim/issues/14062
+      enterCommand("setlocal test<")
+
+      assertCommandOutput("setglobal test?", "  test=globalValue")
+      assertCommandOutput("setlocal test?", "  test=globalValue")
+    } finally {
+      injector.optionGroup.removeOption(option.name)
+    }
   }
 
   @Test
   fun `test show all modified local option and unset global-local values`() {
-    assertCommandOutput("setlocal", """
+    // 'fileformat' will always be "unix" because the platform normalises line endings to `\n`, but the default is
+    // different for Mac/Unix and DOS. For the sake of tests, reset to the OS default
+    enterCommand("setlocal fileformat&")
+
+    // 'fileencoding' defaults to "", but is automatically detected as UTF-8
+    assertCommandOutput(
+      "setlocal", """
       |--- Local option values ---
       |--ideajoin            idearefactormode=   scrolloff=-1        sidescrolloff=-1
+      |  fileencoding=utf-8
       |--ideacopypreprocess
       |  undolevels=-123456
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show all modified local option and unset global-local values 2`() {
+    // 'fileformat' will always be "unix" because the platform normalises line endings to `\n`, but the default is
+    // different for Mac/Unix and DOS. For the sake of tests, reset to the OS default
+    enterCommand("setlocal fileformat&")
+
+    // 'fileencoding' defaults to "", but is automatically detected as UTF-8
     enterCommand("setlocal number relativenumber scrolloff=10 nrformats=alpha,hex,octal sidescrolloff=10")
-    assertCommandOutput("setlocal", """
+    assertCommandOutput(
+      "setlocal", """
       |--- Local option values ---
       |--ideajoin            number              scrolloff=10
       |  idearefactormode=   relativenumber      sidescrolloff=10
+      |  fileencoding=utf-8
       |--ideacopypreprocess
       |  nrformats=alpha,hex,octal
       |  undolevels=-123456
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show all local option values`() {
+    // 'fileencoding' defaults to "", but is automatically detected as UTF-8
     setOsSpecificOptionsToSafeValues()
-    assertCommandOutput("setlocal all", """
+    assertCommandOutput(
+      "setlocal all", """
       |--- Local option values ---
-      |noargtextobj        noignorecase          scrolloff=-1      notextobj-entire
-      |nocommentary        noincsearch           selectmode=       notextobj-indent
-      |nodigraph           nomatchit             shellcmdflag=-x     timeout
-      |noexchange            maxmapdepth=20      shellxescape=@      timeoutlen=1000
-      |nogdefault            more                shellxquote={     notrackactionids
-      |nohighlightedyank   nomultiple-cursors    showcmd             virtualedit=
-      |  history=50        noNERDTree            showmode          novisualbell
-      |nohlsearch            nrformats=hex       sidescroll=0        visualdelay=100
-      |noideaglobalmode    nonumber              sidescrolloff=-1    whichwrap=b,s
-      |--ideajoin            operatorfunc=     nosmartcase           wrapscan
-      |  ideamarks         norelativenumber    nosneak
-      |  idearefactormode=   scroll=0            startofline
-      |  ideawrite=all       scrolljump=1      nosurround
-      |  clipboard=ideaput,autoselect,exclude:cons\|linux
+      |noargtextobj          idearefactormode=   scroll=0          notextobj-entire
+      |nobomb                ideawrite=all       scrolljump=1      notextobj-indent
+      |nobreakindent       noignorecase          scrolloff=-1        textwidth=0
+      |  colorcolumn=      noincsearch           selectmode=         timeout
+      |nocommentary        nolist                shellcmdflag=-x     timeoutlen=1000
+      |nocursorline        nomatchit             shellxescape=@    notrackactionids
+      |nodigraph             maxmapdepth=20      shellxquote={       virtualedit=
+      |noexchange          nomini-ai             showcmd           novisualbell
+      |  fileformat=unix     more                showmode            visualdelay=100
+      |nogdefault          nomultiple-cursors    sidescroll=0        whichwrap=b,s
+      |nohighlightedyank   noNERDTree            sidescrolloff=-1    wrap
+      |  history=50          nrformats=hex     nosmartcase           wrapscan
+      |nohlsearch          nonumber            nosneak
+      |--ideajoin            operatorfunc=       startofline
+      |  ideamarks         norelativenumber    nosurround
+      |  clipboard=ideaput,autoselect
+      |  fileencoding=utf-8
       |  guicursor=n-v-c:block-Cursor/lCursor,ve:ver35-Cursor,o:hor50-Cursor,i-ci:ver25-Cursor/lCursor,r-cr:hor20-Cursor/lCursor,sm:block-Cursor-blinkwait175-blinkoff150-blinkon175
       |  ide=IntelliJ IDEA Community Edition
       |--ideacopypreprocess
@@ -410,42 +515,58 @@ class SetlocalCommandTest : VimTestCase() {
       |  undolevels=-123456
       |novim-paragraph-motion
       |  viminfo='100,<50,s10,h
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show named options`() {
-    assertCommandOutput("setlocal number? relativenumber? scrolloff? nrformats?", """
+    assertCommandOutput(
+      "setlocal number? relativenumber? scrolloff? nrformats?", """
       |  nrformats=hex     nonumber            norelativenumber      scrolloff=-1
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show all modified local option values in single column`() {
-    assertCommandOutput("setlocal!", """
+    // 'fileformat' will always be "unix" because the platform normalises line endings to `\n`, but the default is
+    // different for Mac/Unix and DOS. For the sake of tests, reset to the OS default
+    enterCommand("setlocal fileformat&")
+
+    // 'fileencoding' defaults to "", but is automatically detected as UTF-8
+    assertCommandOutput(
+      "setlocal!", """
       |--- Local option values ---
+      |  fileencoding=utf-8
       |--ideacopypreprocess
       |--ideajoin
       |  idearefactormode=
       |  scrolloff=-1
       |  sidescrolloff=-1
       |  undolevels=-123456
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show all local option values in single column`() {
+    // 'fileencoding' defaults to "", but is automatically detected as UTF-8
     setOsSpecificOptionsToSafeValues()
-    assertCommandOutput("setlocal! all", """
+    assertCommandOutput(
+      "setlocal! all", """
       |--- Local option values ---
       |noargtextobj
-      |  clipboard=ideaput,autoselect,exclude:cons\|linux
+      |nobomb
+      |nobreakindent
+      |  clipboard=ideaput,autoselect
+      |  colorcolumn=
       |nocommentary
+      |nocursorline
       |nodigraph
       |noexchange
+      |  fileencoding=utf-8
+      |  fileformat=unix
       |nogdefault
       |  guicursor=n-v-c:block-Cursor/lCursor,ve:ver35-Cursor,o:hor50-Cursor,i-ci:ver25-Cursor/lCursor,r-cr:hor20-Cursor/lCursor,sm:block-Cursor-blinkwait175-blinkoff150-blinkon175
       |nohighlightedyank
@@ -453,7 +574,6 @@ class SetlocalCommandTest : VimTestCase() {
       |nohlsearch
       |  ide=IntelliJ IDEA Community Edition
       |--ideacopypreprocess
-      |noideaglobalmode
       |--ideajoin
       |  ideamarks
       |  idearefactormode=
@@ -464,10 +584,12 @@ class SetlocalCommandTest : VimTestCase() {
       |noincsearch
       |  iskeyword=@,48-57,_
       |  keymodel=continueselect,stopselect
+      |nolist
       |  lookupkeys=<Tab>,<Down>,<Up>,<Enter>,<Left>,<Right>,<C-Down>,<C-Up>,<PageUp>,<PageDown>,<C-J>,<C-Q>
       |nomatchit
       |  matchpairs=(:),{:},[:]
       |  maxmapdepth=20
+      |nomini-ai
       |  more
       |nomultiple-cursors
       |noNERDTree
@@ -495,6 +617,7 @@ class SetlocalCommandTest : VimTestCase() {
       |nosurround
       |notextobj-entire
       |notextobj-indent
+      |  textwidth=0
       |  timeout
       |  timeoutlen=1000
       |notrackactionids
@@ -505,19 +628,21 @@ class SetlocalCommandTest : VimTestCase() {
       |novisualbell
       |  visualdelay=100
       |  whichwrap=b,s
+      |  wrap
       |  wrapscan
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 
   @Test
   fun `test show named options in single column`() {
-    assertCommandOutput("setlocal! number? relativenumber? scrolloff? nrformats?", """
+    assertCommandOutput(
+      "setlocal! number? relativenumber? scrolloff? nrformats?", """
       |  nrformats=hex
       |nonumber
       |norelativenumber
       |  scrolloff=-1
-      |""".trimMargin()
+      """.trimMargin()
     )
   }
 }

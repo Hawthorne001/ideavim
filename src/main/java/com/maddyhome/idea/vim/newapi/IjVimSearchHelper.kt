@@ -13,14 +13,10 @@ import com.intellij.openapi.diagnostic.Logger
 import com.maddyhome.idea.vim.api.ImmutableVimCaret
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.VimSearchHelperBase
-import com.maddyhome.idea.vim.api.injector
-import com.maddyhome.idea.vim.common.TextRange
 import com.maddyhome.idea.vim.helper.PsiHelper
-import com.maddyhome.idea.vim.helper.SearchHelper
-import com.maddyhome.idea.vim.helper.SearchOptions
+import com.maddyhome.idea.vim.helper.findMisspelledWords
 import it.unimi.dsi.fastutil.ints.IntComparator
 import it.unimi.dsi.fastutil.ints.IntComparators
-import java.util.*
 
 @Service
 internal class IjVimSearchHelper : VimSearchHelperBase() {
@@ -38,28 +34,6 @@ internal class IjVimSearchHelper : VimSearchHelperBase() {
     return PsiHelper.findMethodStart(editor.ij, caret.ij.offset, count)
   }
 
-  override fun findPattern(
-    editor: VimEditor,
-    pattern: String?,
-    startOffset: Int,
-    count: Int,
-    searchOptions: EnumSet<SearchOptions>?,
-  ): TextRange? {
-    return if (injector.globalIjOptions().useNewRegex) super.findPattern(editor, pattern, startOffset, count, searchOptions)
-    else SearchHelper.findPattern(editor.ij, pattern, startOffset, count, searchOptions)
-  }
-
-  override fun findAll(
-    editor: VimEditor,
-    pattern: String,
-    startLine: Int,
-    endLine: Int,
-    ignoreCase: Boolean,
-  ): List<TextRange> {
-    return if (injector.globalIjOptions().useNewRegex) super.findAll(editor, pattern, startLine, endLine, ignoreCase)
-    else SearchHelper.findAll(editor.ij, pattern, startLine, endLine, ignoreCase)
-  }
-
   override fun findMisspelledWord(editor: VimEditor, caret: ImmutableVimCaret, count: Int): Int {
     val startOffset: Int
     val endOffset: Int
@@ -71,8 +45,7 @@ internal class IjVimSearchHelper : VimSearchHelperBase() {
       endOffset = caret.offset - 1
       skipCount = -count - 1
       offsetOrdering = IntComparators.OPPOSITE_COMPARATOR
-    }
-    else {
+    } else {
       startOffset = caret.offset + 1
       endOffset = editor.ij.document.textLength
       skipCount = count - 1
@@ -80,6 +53,6 @@ internal class IjVimSearchHelper : VimSearchHelperBase() {
     }
 
     // TODO add it to PsiService
-    return SearchHelper.findMisspelledWords(editor.ij, startOffset, endOffset, skipCount, offsetOrdering)
+    return findMisspelledWords(editor.ij, startOffset, endOffset, skipCount, offsetOrdering)
   }
 }

@@ -14,6 +14,7 @@ import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.diagnostic.Logger;
 import com.maddyhome.idea.vim.VimPlugin;
+import com.maddyhome.idea.vim.newapi.IjVimInjectorKt;
 import com.maddyhome.idea.vim.register.Register;
 import com.maddyhome.idea.vim.register.VimRegisterGroupBase;
 import com.maddyhome.idea.vim.state.mode.SelectionType;
@@ -24,16 +25,20 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+
+import static com.maddyhome.idea.vim.api.VimInjectorKt.injector;
 
 /**
  * This group works with command associated with copying and pasting text
  */
 @State(name = "VimRegisterSettings", storages = {
-  @Storage(value = "$APP_CONFIG$/vim_settings_local.xml", roamingType = RoamingType.DISABLED)
-})
+  @Storage(value = "$APP_CONFIG$/vim_settings_local.xml", roamingType = RoamingType.DISABLED)})
 public class RegisterGroup extends VimRegisterGroupBase implements PersistentStateComponent<Element> {
+
+  static {
+    IjVimInjectorKt.initInjector();
+  }
 
   private static final Logger logger = Logger.getInstance(RegisterGroup.class);
 
@@ -123,7 +128,7 @@ public class RegisterGroup extends VimRegisterGroupBase implements PersistentSta
           final String text = VimPlugin.getXML().getSafeXmlText(textElement);
           if (text != null) {
             logger.trace("Register data parsed");
-            register = new Register(key, type, text, Collections.emptyList());
+            register = new Register(key, injector.getClipboardManager().dumbCopiedText(text), type);
           }
           else {
             logger.trace("Cannot parse register data");
@@ -140,9 +145,8 @@ public class RegisterGroup extends VimRegisterGroupBase implements PersistentSta
             final int modifiers = Integer.parseInt(keyElement.getAttributeValue("mods"));
             final char c = (char)Integer.parseInt(keyElement.getAttributeValue("char"));
             //noinspection MagicConstant
-            strokes.add(c == KeyEvent.CHAR_UNDEFINED ?
-                        KeyStroke.getKeyStroke(code, modifiers) :
-                        KeyStroke.getKeyStroke(c));
+            strokes.add(
+              c == KeyEvent.CHAR_UNDEFINED ? KeyStroke.getKeyStroke(code, modifiers) : KeyStroke.getKeyStroke(c));
           }
           register = new Register(key, type, strokes);
         }

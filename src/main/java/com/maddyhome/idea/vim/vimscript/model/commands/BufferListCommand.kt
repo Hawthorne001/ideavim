@@ -17,9 +17,9 @@ import com.intellij.vim.annotations.ExCommand
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimEditor
+import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.ex.ExOutputModel
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.helper.EditorHelper
 import com.maddyhome.idea.vim.helper.vimLine
 import com.maddyhome.idea.vim.newapi.ij
@@ -32,7 +32,9 @@ import org.jetbrains.annotations.NonNls
  * @author John Weigel
  */
 @ExCommand(command = "ls,files,buffers")
-internal data class BufferListCommand(val ranges: Ranges, val argument: String) : Command.SingleExecution(ranges) {
+internal data class BufferListCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  Command.SingleExecution(range, modifier) {
+
   override val argFlags = flags(RangeFlag.RANGE_FORBIDDEN, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
 
   companion object {
@@ -40,12 +42,18 @@ internal data class BufferListCommand(val ranges: Ranges, val argument: String) 
     val SUPPORTED_FILTERS = setOf('+', '=', 'a', '%', '#')
   }
 
-  override fun processCommand(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments): ExecutionResult {
+  override fun processCommand(
+    editor: VimEditor,
+    context: ExecutionContext,
+    operatorArguments: OperatorArguments,
+  ): ExecutionResult {
     val arg = argument.trim()
     val filter = pruneUnsupportedFilters(arg)
     val bufferList = getBufferList(context, filter)
 
-    ExOutputModel.getInstance(editor.ij).output(bufferList.joinToString(separator = "\n"))
+    val outputPanel = injector.outputPanel.getOrCreate(editor, context)
+    outputPanel.addText(bufferList.joinToString(separator = "\n"))
+    outputPanel.show()
 
     return ExecutionResult.Success
   }

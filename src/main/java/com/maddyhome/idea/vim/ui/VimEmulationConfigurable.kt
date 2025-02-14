@@ -86,11 +86,20 @@ internal class VimEmulationConfigurable : Configurable {
 
     init {
       val shortcutConflictsTable = VimShortcutConflictsTable(model)
+      val rowsToBeChangedOnToggleAllHandlers = getRowsToBeToggled()
+
       layout = BorderLayout()
       val decorator = ToolbarDecorator.createDecorator(shortcutConflictsTable)
       decorator.setToolbarPosition(ActionToolbarPosition.RIGHT)
       decorator.addExtraAction(CopyForRcAction(model))
       decorator.addExtraAction(ResetHandlersAction(model, shortcutConflictsTable))
+      decorator.addExtraAction(
+        ToggleAllHandlersAction(
+          model,
+          shortcutConflictsTable,
+          rowsToBeChangedOnToggleAllHandlers
+        )
+      )
       val scrollPane = decorator.createPanel()
       scrollPane.border = LineBorder(JBColor.border())
       val conflictsPanel = JPanel(BorderLayout())
@@ -99,6 +108,19 @@ internal class VimEmulationConfigurable : Configurable {
       conflictsPanel.add(scrollPane)
       add(conflictsPanel, BorderLayout.CENTER)
       addHelpLine(model)
+    }
+
+    private fun getRowsToBeToggled(): MutableList<Int> {
+      val rowsToChange = mutableListOf<Int>()
+
+      for (rowIndex in 0 until model.rows.size) {
+        val row = model.rows[rowIndex]
+        if (row.owner is AllModes && row.owner == ShortcutOwnerInfo.allUndefined) {
+          rowsToChange.add(rowIndex)
+        }
+      }
+
+      return rowsToChange
     }
 
     fun addHelpLine(model: VimShortcutConflictsTable.Model) {
@@ -325,6 +347,40 @@ internal class VimEmulationConfigurable : Configurable {
       }
       val data = stringBuilder.toString()
       injector.clipboardManager.setClipboardText(data, data, emptyList())
+    }
+  }
+
+  private class ToggleAllHandlersAction(
+    private val myModel: VimShortcutConflictsTable.Model,
+    private val myTable: VimShortcutConflictsTable,
+    private val rowsToBeChangedOnToggleAllHandlers: MutableList<Int>,
+  ) : DumbAwareAction(
+    "Toggle all unset Handlers",
+    "Toggle all action handlers to use either IDE or Vim shortcuts",
+    AllIcons.Actions.ChangeView,
+  ) {
+    override fun update(e: AnActionEvent) {
+      e.presentation.isEnabled = true
+    }
+
+    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+      TableUtil.stopEditing(myTable)
+
+      for (rowIndex in rowsToBeChangedOnToggleAllHandlers) {
+        val row = myModel.rows[rowIndex]
+        row.owner =
+          when (row.owner) {
+            ShortcutOwnerInfo.allUndefined -> ShortcutOwnerInfo.allVim
+            ShortcutOwnerInfo.allVim -> ShortcutOwnerInfo.allIde
+            else -> ShortcutOwnerInfo.allUndefined
+          }
+      }
+
+      IdeFocusManager.getGlobalInstance()
+        .doWhenFocusSettlesDown { IdeFocusManager.getGlobalInstance().requestFocus(myTable, true) }
+      TableUtil.updateScroller(myTable)
     }
   }
 

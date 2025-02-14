@@ -14,13 +14,14 @@ import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.Argument
 import com.maddyhome.idea.vim.common.DigraphResult
+import com.maddyhome.idea.vim.diagnostic.trace
 import com.maddyhome.idea.vim.diagnostic.vimLogger
 import com.maddyhome.idea.vim.key.KeyConsumer
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import javax.swing.KeyStroke
 
-public class DigraphConsumer : KeyConsumer {
+class DigraphConsumer : KeyConsumer {
   private companion object {
     private val logger = vimLogger<DigraphConsumer>()
   }
@@ -31,8 +32,8 @@ public class DigraphConsumer : KeyConsumer {
     allowKeyMappings: Boolean,
     mappingCompleted: Boolean,
     keyProcessResultBuilder: KeyProcessResult.KeyProcessResultBuilder,
-    shouldRecord: KeyHandler.MutableBoolean,
   ): Boolean {
+    logger.trace { "Entered DigraphConsumer" }
     logger.debug("Handling digraph")
     // Support starting a digraph/literal sequence if the operator accepts one as an argument, e.g. 'r' or 'f'.
     // Normally, we start the sequence (in Insert or CmdLine mode) through a VimAction that can be mapped. Our
@@ -41,38 +42,40 @@ public class DigraphConsumer : KeyConsumer {
     val keyState = keyProcessResultBuilder.state
     val commandBuilder = keyState.commandBuilder
     val digraphSequence = keyState.digraphSequence
+
     if (commandBuilder.expectedArgumentType == Argument.Type.DIGRAPH) {
       logger.trace("Expected argument is digraph")
       if (digraphSequence.isDigraphStart(key)) {
         digraphSequence.startDigraphSequence()
-        commandBuilder.addKey(key)
+        commandBuilder.addTypedKeyStroke(key)
         return true
       }
       if (digraphSequence.isLiteralStart(key)) {
         digraphSequence.startLiteralSequence()
-        commandBuilder.addKey(key)
+        commandBuilder.addTypedKeyStroke(key)
         return true
       }
     }
+
     val res = digraphSequence.processKey(key, editor)
     val keyHandler = KeyHandler.getInstance()
-    when (res.result) {
-      DigraphResult.RES_HANDLED -> {
+    when (res) {
+      is DigraphResult.Handled -> {
         keyProcessResultBuilder.addExecutionStep { lambdaKeyState, _, _ ->
-          if (injector.exEntryPanel.isActive()) {
-            keyHandler.setPromptCharacterEx(if (lambdaKeyState.commandBuilder.isPuttingLiteral()) '^' else key.keyChar)
-          }
-          lambdaKeyState.commandBuilder.addKey(key)
+          keyHandler.setPromptCharacterEx(res.promptCharacter)
+          lambdaKeyState.commandBuilder.addTypedKeyStroke(key)
         }
         return true
       }
-      DigraphResult.RES_DONE -> {
-        if (injector.exEntryPanel.isActive()) {
+
+      is DigraphResult.Done -> {
+        val commandLine = injector.commandLine.getActiveCommandLine()
+        if (commandLine != null) {
           if (key.keyCode == KeyEvent.VK_C && key.modifiers and InputEvent.CTRL_DOWN_MASK != 0) {
             return false
           } else {
             keyProcessResultBuilder.addExecutionStep { _, _, _ ->
-              injector.exEntryPanel.clearCurrentAction()
+              commandLine.clearCurrentAction()
             }
           }
         }
@@ -84,18 +87,20 @@ public class DigraphConsumer : KeyConsumer {
         }
         val stroke = res.stroke ?: return false
         keyProcessResultBuilder.addExecutionStep { lambdaKeyState, lambdaEditorState, lambdaContext ->
-          lambdaKeyState.commandBuilder.addKey(key)
+          lambdaKeyState.commandBuilder.addTypedKeyStroke(key)
           keyHandler.handleKey(lambdaEditorState, stroke, lambdaContext, lambdaKeyState)
         }
         return true
       }
-      DigraphResult.RES_BAD -> {
-        if (injector.exEntryPanel.isActive()) {
+
+      is DigraphResult.Bad -> {
+        val commandLine = injector.commandLine.getActiveCommandLine()
+        if (commandLine != null) {
           if (key.keyCode == KeyEvent.VK_C && key.modifiers and InputEvent.CTRL_DOWN_MASK != 0) {
             return false
           } else {
             keyProcessResultBuilder.addExecutionStep { _, _, _ ->
-              injector.exEntryPanel.clearCurrentAction()
+              commandLine.clearCurrentAction()
             }
           }
         }
@@ -107,7 +112,8 @@ public class DigraphConsumer : KeyConsumer {
         }
         return true
       }
-      DigraphResult.RES_UNHANDLED -> {
+
+      is DigraphResult.Unhandled -> {
         // UNHANDLED means the keystroke made no sense in the context of a digraph, but isn't an error in the current
         // state. E.g. waiting for {char} <BS> {char}. Let the key handler have a go at it.
         if (commandBuilder.expectedArgumentType === Argument.Type.DIGRAPH) {
@@ -120,6 +126,5 @@ public class DigraphConsumer : KeyConsumer {
         return false
       }
     }
-    return false
   }
 }

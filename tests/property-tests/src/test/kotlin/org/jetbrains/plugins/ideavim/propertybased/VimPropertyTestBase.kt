@@ -12,7 +12,6 @@ import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.editor.Editor
 import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.VimPlugin
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.newapi.vim
 import org.jetbrains.jetCheck.Generator
 import org.jetbrains.jetCheck.ImperativeCommand
@@ -25,7 +24,8 @@ abstract class VimPropertyTestBase : VimTestCase() {
   }
 
   protected fun reset(editor: Editor) {
-    editor.vim.vimStateMachine.mappingState.resetMappingSequence()
+    val keyState = KeyHandler.getInstance().keyHandlerState
+    keyState.mappingState.resetMappingSequence()
     VimPlugin.getKey().resetKeyMappings()
 
     KeyHandler.getInstance().fullReset(editor.vim)

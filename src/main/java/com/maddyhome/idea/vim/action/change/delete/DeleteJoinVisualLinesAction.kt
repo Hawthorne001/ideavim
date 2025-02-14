@@ -23,7 +23,7 @@ import com.maddyhome.idea.vim.newapi.ijOptions
  * @author vlan
  */
 @CommandOrMotion(keys = ["gJ"], modes = [Mode.VISUAL])
-public class DeleteJoinVisualLinesAction : VisualOperatorActionHandler.SingleExecution() {
+class DeleteJoinVisualLinesAction : VisualOperatorActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.DELETE
 
   override fun executeForAllCarets(
@@ -44,6 +44,7 @@ public class DeleteJoinVisualLinesAction : VisualOperatorActionHandler.SingleExe
       val range = caretsAndSelections[caret] ?: return@forEach
       if (!injector.changeGroup.deleteJoinRange(
           editor,
+          context,
           caret,
           range.toVimTextRange(true).normalize(),
           false,

@@ -20,7 +20,7 @@ import com.maddyhome.idea.vim.handler.ChangeEditorActionHandler
 import com.maddyhome.idea.vim.vimscript.model.Script
 
 @CommandOrMotion(keys = ["g&"], modes = [Mode.NORMAL])
-public class ChangeLastGlobalSearchReplaceAction : ChangeEditorActionHandler.SingleExecution() {
+class ChangeLastGlobalSearchReplaceAction : ChangeEditorActionHandler.SingleExecution() {
   override val type: Command.Type = Command.Type.OTHER_SELF_SYNCHRONIZED
 
   override fun execute(
@@ -31,6 +31,6 @@ public class ChangeLastGlobalSearchReplaceAction : ChangeEditorActionHandler.Sin
   ): Boolean {
     val range = LineRange(0, editor.lineCount() - 1)
     return injector.searchGroup
-      .processSubstituteCommand(editor, editor.primaryCaret(), range, "s", "//~/&", Script(listOf()))
+      .processSubstituteCommand(editor, editor.primaryCaret(), context, range, "s", "//~/&", Script(listOf()))
   }
 }

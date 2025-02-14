@@ -8,7 +8,6 @@
 
 package com.maddyhome.idea.vim.group;
 
-import com.google.common.collect.ImmutableList;
 import com.intellij.codeInsight.lookup.impl.LookupImpl;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
@@ -17,21 +16,16 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.keymap.Keymap;
 import com.intellij.openapi.keymap.KeymapManager;
 import com.intellij.openapi.keymap.ex.KeymapManagerEx;
+import com.intellij.util.containers.MultiMap;
 import com.maddyhome.idea.vim.EventFacade;
 import com.maddyhome.idea.vim.VimPlugin;
 import com.maddyhome.idea.vim.action.VimShortcutKeyAction;
 import com.maddyhome.idea.vim.action.change.LazyVimCommand;
-import com.maddyhome.idea.vim.api.NativeAction;
-import com.maddyhome.idea.vim.api.VimEditor;
-import com.maddyhome.idea.vim.api.VimInjectorKt;
-import com.maddyhome.idea.vim.api.VimKeyGroupBase;
+import com.maddyhome.idea.vim.api.*;
 import com.maddyhome.idea.vim.command.MappingMode;
-import com.maddyhome.idea.vim.ex.ExOutputModel;
 import com.maddyhome.idea.vim.key.*;
 import com.maddyhome.idea.vim.newapi.IjNativeAction;
 import com.maddyhome.idea.vim.newapi.IjVimEditor;
@@ -45,8 +39,8 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.KeyEvent;
-import java.util.List;
 import java.util.*;
+import java.util.List;
 
 import static com.maddyhome.idea.vim.api.VimInjectorKt.injector;
 import static java.util.stream.Collectors.toList;
@@ -55,13 +49,11 @@ import static java.util.stream.Collectors.toList;
  * @author vlan
  */
 @State(name = "VimKeySettings", storages = {@Storage(value = "$APP_CONFIG$/vim_settings.xml")})
-public class KeyGroup extends VimKeyGroupBase implements PersistentStateComponent<Element>{
+public class KeyGroup extends VimKeyGroupBase implements PersistentStateComponent<Element> {
   public static final @NonNls String SHORTCUT_CONFLICTS_ELEMENT = "shortcut-conflicts";
   private static final @NonNls String SHORTCUT_CONFLICT_ELEMENT = "shortcut-conflict";
   private static final @NonNls String OWNER_ATTRIBUTE = "owner";
   private static final String TEXT_ELEMENT = "text";
-
-  private static final Logger logger = Logger.getInstance(KeyGroup.class);
 
   public void registerRequiredShortcutKeys(@NotNull VimEditor editor) {
     EventFacade.getInstance()
@@ -79,25 +71,6 @@ public class KeyGroup extends VimKeyGroupBase implements PersistentStateComponen
     EventFacade.getInstance().unregisterCustomShortcutSet(VimShortcutKeyAction.getInstance(),
                                                           ((IjVimEditor)editor).getEditor().getComponent());
   }
-
-  public boolean showKeyMappings(@NotNull Set<? extends MappingMode> modes, @NotNull Editor editor) {
-    List<Pair<EnumSet<MappingMode>, MappingInfo>> rows = getKeyMappingRows(modes);
-    final StringBuilder builder = new StringBuilder();
-    for (Pair<EnumSet<MappingMode>, MappingInfo> row : rows) {
-      MappingInfo mappingInfo = row.getSecond();
-      builder.append(StringsKt.padEnd(getModesStringCode(row.getFirst()), 2, ' '));
-      builder.append(" ");
-      builder.append(StringsKt.padEnd(VimInjectorKt.getInjector().getParser().toKeyNotation(mappingInfo.getFromKeys()), 11, ' '));
-      builder.append(" ");
-      builder.append(mappingInfo.isRecursive() ? " " : "*");
-      builder.append(" ");
-      builder.append(mappingInfo.getPresentableString());
-      builder.append("\n");
-    }
-    ExOutputModel.getInstance(editor).output(builder.toString());
-    return true;
-  }
-
 
   @Override
   public void updateShortcutKeysRegistration() {
@@ -221,8 +194,7 @@ public class KeyGroup extends VimKeyGroupBase implements PersistentStateComponen
       registerRequiredShortcut(keyStrokes, MappingOwner.IdeaVim.System.INSTANCE);
 
       for (MappingMode mappingMode : command.getModes()) {
-        Node<LazyVimCommand> node = getKeyRoot(mappingMode);
-        NodesKt.addLeafs(node, keyStrokes, command);
+        getBuiltinCommandsTrie(mappingMode).add(keyStrokes, command);
       }
     }
   }
@@ -247,53 +219,79 @@ public class KeyGroup extends VimKeyGroupBase implements PersistentStateComponen
     return new CustomShortcutSet(shortcuts.toArray(new Shortcut[0]));
   }
 
-  private static @NotNull List<Pair<EnumSet<MappingMode>, MappingInfo>> getKeyMappingRows(@NotNull Set<? extends MappingMode> modes) {
-    final Map<ImmutableList<KeyStroke>, EnumSet<MappingMode>> actualModes = new HashMap<>();
+  private static @NotNull List<Pair<Set<MappingMode>, MappingInfo>> getKeyMappingRows(@NotNull Set<? extends MappingMode> modes,
+                                                                                      @NotNull List<? extends KeyStroke> prefix) {
+    // Some map commands set a mapping for more than one mode (e.g. `map` sets for Normal, Visual, Select and
+    // Op-pending). Vim treats this as a single mapping, and when listing all maps only lists it once, with the
+    // appropriate mode indicator(s) in the first column (NVO is a space char). If the lhs mapping is changed or cleared
+    // for one of the modes, the original mapping is still a single map for the remaining modes, and the indicator
+    // changes. E.g. `map foo bar` followed by `sunmap foo` would result in `nox foo bar` in the output to `map`.
+    // Vim doesn't do automatic grouping - `nmap foo bar` followed by `omap foo bar` and `vmap foo bar` would result in
+    // 3 lines in the output to `map` - one for `n`, one for `o` and one for `v`.
+    // We store mappings separately per mode (to simplify lookup, especially when matching prefixes), but want to have
+    // the same behaviour as Vim in map output. So we store the original modes with the mapping and check they're still
+    // valid as we collect output
+    final List<Pair<Set<MappingMode>, MappingInfo>> rows = new ArrayList<>();
+    final MultiMap<List<? extends KeyStroke>, Set<MappingMode>> multiModeMappings = MultiMap.create();
+    final List<KeyStroke> fromKeys = new ArrayList<>();
+
     for (MappingMode mode : modes) {
       final KeyMapping mapping = VimPlugin.getKey().getKeyMapping(mode);
-      for (List<? extends KeyStroke> fromKeys : mapping) {
-        final ImmutableList<KeyStroke> key = ImmutableList.copyOf(fromKeys);
-        final EnumSet<MappingMode> value = actualModes.get(key);
-        final EnumSet<MappingMode> newValue;
-        if (value != null) {
-          newValue = value.clone();
-          newValue.add(mode);
+
+      final Iterator<KeyMappingEntry> iterator = mapping.getAll(prefix).iterator();
+      while (iterator.hasNext()) {
+        final KeyMappingEntry entry = iterator.next();
+        final MappingInfo mappingInfo = entry.getMappingInfo();
+
+        final Set<@NotNull MappingMode> originalModes = mappingInfo.getOriginalModes();
+        if (originalModes.size() == 1) {
+          rows.add(new Pair<>(originalModes, mappingInfo));
         }
         else {
-          newValue = EnumSet.of(mode);
-        }
-        actualModes.put(key, newValue);
-      }
-    }
-    final List<Pair<EnumSet<MappingMode>, MappingInfo>> rows = new ArrayList<>();
-    for (Map.Entry<ImmutableList<KeyStroke>, EnumSet<MappingMode>> entry : actualModes.entrySet()) {
-      final ArrayList<KeyStroke> fromKeys = new ArrayList<>(entry.getKey());
-      final EnumSet<MappingMode> mappingModes = entry.getValue();
-      if (!mappingModes.isEmpty()) {
-        final MappingMode mode = mappingModes.iterator().next();
-        final KeyMapping mapping = VimPlugin.getKey().getKeyMapping(mode);
-        final MappingInfo mappingInfo = mapping.get(fromKeys);
-        if (mappingInfo != null) {
-          rows.add(new Pair<>(mappingModes, mappingInfo));
+          entry.collectPath(fromKeys);
+          if (!multiModeMappings.get(fromKeys).contains(originalModes)) {
+            multiModeMappings.putValue(new ArrayList<>(fromKeys), originalModes);
+            rows.add(new Pair<>(getModesForMapping(fromKeys, originalModes), mappingInfo));
+          }
         }
       }
     }
-    rows.sort(Comparator.comparing(Pair<EnumSet<MappingMode>, MappingInfo>::getSecond));
+    rows.sort(Comparator.comparing(Pair<Set<MappingMode>, MappingInfo>::getSecond));
     return rows;
   }
 
+  private static @NotNull Set<MappingMode> getModesForMapping(@NotNull List<? extends KeyStroke> keyStrokes,
+                                                              @NotNull Set<MappingMode> originalMappingModes) {
+    final Set<MappingMode> actualModes = EnumSet.noneOf(MappingMode.class);
+    for (MappingMode mode : originalMappingModes) {
+      final MappingInfo mappingInfo = VimPlugin.getKey().getKeyMapping(mode).get(keyStrokes);
+      if (mappingInfo != null && mappingInfo.getOriginalModes() == originalMappingModes) {
+        actualModes.add(mode);
+      }
+    }
+    return actualModes;
+  }
+
   private static @NotNull @NonNls String getModesStringCode(@NotNull Set<MappingMode> modes) {
-    if (modes.equals(MappingMode.NVO)) {
-      return "";
+    if (modes.equals(MappingMode.IC)) return "!";
+    if (modes.equals(MappingMode.NVO)) return " ";
+    if (modes.equals(MappingMode.C)) return "c";
+    if (modes.equals(MappingMode.I)) return "i";
+    //if (modes.equals(MappingMode.L)) return "l";
+
+    // The following modes are concatenated
+    String mode = "";
+    if (modes.containsAll(MappingMode.N)) mode += "n";
+    if (modes.containsAll(MappingMode.O)) mode += "o";
+
+    if (modes.containsAll(MappingMode.V)) {
+      mode += "v";
     }
-    else if (modes.contains(MappingMode.INSERT)) {
-      return "i";
+    else {
+      if (modes.containsAll(MappingMode.X)) mode += "x";
+      if (modes.containsAll(MappingMode.S)) mode += "s";
     }
-    else if (modes.contains(MappingMode.NORMAL)) {
-      return "n";
-    }
-    // TODO: Add more codes
-    return "";
+    return mode;
   }
 
   private @NotNull List<AnAction> getActions(@NotNull Component component, @NotNull KeyStroke keyStroke) {
@@ -305,8 +303,8 @@ public class KeyGroup extends VimKeyGroupBase implements PersistentStateComponen
 
   @Override
   public @NotNull List<NativeAction> getActions(@NotNull VimEditor editor, @NotNull KeyStroke keyStroke) {
-    return getActions(((IjVimEditor)editor).getEditor().getComponent(), keyStroke).stream()
-      .map(IjNativeAction::new).collect(toList());
+    return getActions(((IjVimEditor)editor).getEditor().getComponent(), keyStroke).stream().map(IjNativeAction::new)
+      .collect(toList());
   }
 
   private static @NotNull List<AnAction> getLocalActions(@NotNull Component component, @NotNull KeyStroke keyStroke) {
@@ -316,7 +314,7 @@ public class KeyGroup extends VimKeyGroupBase implements PersistentStateComponen
       if (c instanceof JComponent) {
         final List<AnAction> actions = ActionUtil.getActions((JComponent)c);
         for (AnAction action : actions) {
-          if (action instanceof VimShortcutKeyAction) {
+          if (action instanceof VimShortcutKeyAction || action == VimShortcutKeyAction.getInstance()) {
             continue;
           }
           final Shortcut[] shortcuts = action.getShortcutSet().getShortcuts();
@@ -336,7 +334,11 @@ public class KeyGroup extends VimKeyGroupBase implements PersistentStateComponen
     final Keymap keymap = KeymapManager.getInstance().getActiveKeymap();
     for (String id : keymap.getActionIds(keyStroke)) {
       final AnAction action = ActionManager.getInstance().getAction(id);
-      if (action != null) {
+
+      // EmptyAction is used to reserve a shortcut, but can't be executed. Code can ask for an action by ID and
+      // use its shortcut(s) to dynamically register a new action on a component in the UI hierarchy. It's not
+      // useful for our needs here - we'll pick up the real action when we get local actions.
+      if (action != null && !(action instanceof EmptyAction)) {
         results.add(action);
       }
     }
@@ -357,7 +359,28 @@ public class KeyGroup extends VimKeyGroupBase implements PersistentStateComponen
   }
 
   @Override
-  public boolean showKeyMappings(@NotNull Set<? extends MappingMode> modes, @NotNull VimEditor editor) {
-    return showKeyMappings(modes, ((IjVimEditor) editor).getEditor());
+  public boolean showKeyMappings(@NotNull Set<? extends MappingMode> modes,
+                                 @NotNull List<? extends KeyStroke> prefix,
+                                 @NotNull VimEditor editor) {
+    List<Pair<Set<MappingMode>, MappingInfo>> rows = getKeyMappingRows(modes, prefix);
+
+    final StringBuilder builder = new StringBuilder();
+    for (Pair<Set<MappingMode>, MappingInfo> row : rows) {
+      MappingInfo mappingInfo = row.getSecond();
+      builder.append(StringsKt.padEnd(getModesStringCode(row.getFirst()), 3, ' '));
+      builder.append(
+        StringsKt.padEnd(VimInjectorKt.getInjector().getParser().toKeyNotation(mappingInfo.getFromKeys()) + " ", 12,
+                         ' '));
+      builder.append(mappingInfo.isRecursive() ? " " : "*");  // Or `&` if script-local mappings being recursive
+      builder.append(" ");  // Should be `@` if it's a buffer-local mapping
+      builder.append(mappingInfo.getPresentableString());
+      builder.append("\n");
+    }
+
+    VimOutputPanel outputPanel = injector.getOutputPanel()
+      .getOrCreate(editor, injector.getExecutionContextManager().getEditorExecutionContext(editor));
+    outputPanel.addText(builder.toString(), true);
+    outputPanel.show();
+    return true;
   }
 }

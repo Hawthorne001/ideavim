@@ -192,6 +192,13 @@ private object VimActionsPopup {
         null,
       ),
     )
+    actionGroup.add(
+      HelpLink(
+        "Take Survey ↗",
+        "https://jb.gg/axootm",
+        AllIcons.Actions.IntentionBulb,
+      ),
+    )
     actionGroup.addSeparator(MessageHelper.message("action.eap.choice.active.text"))
 
     actionGroup.add(JoinEap)
@@ -260,14 +267,15 @@ private class HelpLink(
   }
 }
 
-private object ShortcutConflictsSettings : DumbAwareAction(MessageHelper.message("action.settings.text"))/*, LightEditCompatible*/ {
+private object ShortcutConflictsSettings :
+  DumbAwareAction(MessageHelper.message("action.settings.text"))/*, LightEditCompatible*/ {
   override fun actionPerformed(e: AnActionEvent) {
     ShowSettingsUtil.getInstance().showSettingsDialog(e.project, VimEmulationConfigurable::class.java)
   }
 }
 
 internal object JoinEap : DumbAwareAction()/*, LightEditCompatible*/ {
-  private const val EAP_LINK = "https://plugins.jetbrains.com/plugins/eap/ideavim"
+  const val EAP_LINK = "https://plugins.jetbrains.com/plugins/eap/ideavim"
 
   fun eapActive() = EAP_LINK in UpdateSettings.getInstance().storedPluginHosts
 

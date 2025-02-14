@@ -19,16 +19,15 @@ import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.openapi.wm.impl.status.EditorBasedWidget
 import com.intellij.util.Consumer
-import com.maddyhome.idea.vim.VimPlugin
+import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.globalOptions
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.common.EditorListener
 import com.maddyhome.idea.vim.helper.EngineStringHelper
 import com.maddyhome.idea.vim.helper.VimNlsSafe
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.newapi.ij
-import com.maddyhome.idea.vim.newapi.vim
+import com.maddyhome.idea.vim.newapi.initInjector
 import com.maddyhome.idea.vim.options.GlobalOptionChangeListener
 import org.jetbrains.annotations.NonNls
 import java.awt.Component
@@ -61,8 +60,8 @@ internal object ShowCmd {
   fun getFullText(editor: Editor?): String {
     if (!injector.globalOptions().showcmd || editor == null || editor.isDisposed) return ""
 
-    val editorState = editor.vim.vimStateMachine
-    return EngineStringHelper.toPrintableCharacters(editorState.commandBuilder.keys + editorState.mappingState.keys)
+    val keyState = KeyHandler.getInstance().keyHandlerState
+    return EngineStringHelper.toPrintableCharacters(keyState.commandBuilder.keys + keyState.mappingState.keys)
   }
 }
 
@@ -73,6 +72,11 @@ internal object ShowCmdOptionChangeListener : GlobalOptionChangeListener {
 }
 
 internal class ShowCmdStatusBarWidgetFactory : StatusBarWidgetFactory/*, LightEditCompatible*/ {
+
+  init {
+    initInjector()
+  }
+
   override fun getId() = ShowCmd.ID
 
   override fun getDisplayName(): String = ShowCmd.displayName
@@ -82,7 +86,6 @@ internal class ShowCmdStatusBarWidgetFactory : StatusBarWidgetFactory/*, LightEd
   }
 
   override fun isAvailable(project: Project): Boolean {
-    VimPlugin.getInstance()
     return injector.globalOptions().showcmd
   }
 

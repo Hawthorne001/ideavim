@@ -25,7 +25,7 @@ import kotlin.reflect.KProperty
 /**
  * Base class to provide mechanisms to delegate properties to get/set option values
  */
-public abstract class OptionsPropertiesBase(private val scope: OptionAccessScope) {
+abstract class OptionsPropertiesBase(private val scope: OptionAccessScope) {
   /**
    * Provide a delegate property to get/set boolean option values
    */
@@ -88,10 +88,13 @@ public abstract class OptionsPropertiesBase(private val scope: OptionAccessScope
   // This is arguably simpler, and StringListOption gives us more type safety about using a string vs a list
   protected fun optionProperty(option: ToggleOption): ReadWriteProperty<OptionsPropertiesBase, Boolean> =
     ToggleOptionProperty(option)
+
   protected fun optionProperty(option: NumberOption): ReadWriteProperty<OptionsPropertiesBase, Int> =
     NumberOptionProperty(option)
+
   protected fun optionProperty(option: StringOption): ReadWriteProperty<OptionsPropertiesBase, String> =
     StringOptionProperty(option)
+
   protected fun optionProperty(option: StringListOption): ReadOnlyProperty<OptionsPropertiesBase, StringListOptionValue> =
     StringListOptionProperty(option)
 }
@@ -105,9 +108,9 @@ public abstract class OptionsPropertiesBase(private val scope: OptionAccessScope
  * Note that this class should be short-lived and not cached. It assumes the underlying option value is not changed
  * except via its own methods!
  */
-public class StringListOptionValue(
+class StringListOptionValue(
   private val option: StringListOption,
-  private val scope: OptionAccessScope
+  private val scope: OptionAccessScope,
 ) : AbstractList<String>() {
 
   // We cache the value at creation time, and update whenever it's changed via one of its own methods. We lazily fetch
@@ -115,10 +118,10 @@ public class StringListOptionValue(
   private var currentValue: VimString = injector.optionGroup.getOptionValue(option, scope)
   private var stringListValues: List<String>? = null
 
-  public val value: String
+  val value: String
     get() = currentValue.value
 
-  public fun appendValue(value: String) {
+  fun appendValue(value: String) {
     val parsedValue = option.parseValue(value, value)
     val newValue = option.appendValue(currentValue, parsedValue)
     injector.optionGroup.setOptionValue(option, scope, newValue)
@@ -126,7 +129,7 @@ public class StringListOptionValue(
     stringListValues = null
   }
 
-  public fun prependValue(value: String) {
+  fun prependValue(value: String) {
     val parsedValue = option.parseValue(value, value)
     val newValue = option.prependValue(currentValue, parsedValue)
     injector.optionGroup.setOptionValue(option, scope, newValue)
@@ -134,7 +137,7 @@ public class StringListOptionValue(
     stringListValues = null
   }
 
-  public fun removeValue(value: String) {
+  fun removeValue(value: String) {
     val parsedValue = option.parseValue(value, value)
     val newValue = option.removeValue(currentValue, parsedValue)
     injector.optionGroup.setOptionValue(option, scope, newValue)

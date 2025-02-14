@@ -10,47 +10,53 @@ package com.maddyhome.idea.vim.state.mode
 
 /**
  * Get the selection type if the mode is [Mode.VISUAL] or [Mode.SELECT]. Otherwise, returns null.
+ *
+ * Note that if the mode is [Mode.CMD_LINE], we return the selection type of the underlying editor. This only has an
+ * effect for (inc)search, as we switch to [Mode.NORMAL] before entering an ex command.
  */
-public val Mode.selectionType: SelectionType?
+@Suppress("RecursivePropertyAccessor")
+val Mode.selectionType: SelectionType?
   get() = when (this) {
     is Mode.VISUAL -> this.selectionType
     is Mode.SELECT -> this.selectionType
-    else -> null
-  }
-
-/**
- * Get the mode that we need to return to if the one-command-mode (':h i_Ctrl-o') is active.
- * Otherwise, returns null.
- */
-public val Mode.returnTo: ReturnTo?
-  get() = when (this) {
-    is Mode.NORMAL -> this.returnTo
-    is Mode.SELECT -> this.returnTo
-    is Mode.VISUAL -> this.returnTo
-    is Mode.OP_PENDING -> this.returnTo
+    is Mode.CMD_LINE -> this.returnTo.selectionType
     else -> null
   }
 
 /**
  * Check if one-command-mode (':h i_Ctrl-o') is active.
  */
-public val Mode.isSingleModeActive: Boolean
-  get() = returnTo != null
+val Mode.isSingleModeActive: Boolean
+  get() {
+    // TODO: This check isn't accurate. Needs updating
+    // If we're in Normal and returning to something other than Normal, then we're definitely in single-execution mode
+    // ("Insert Normal mode"). This doesn't apply to all modes - Visual returning to Normal is fine, as is Command-line
+    // returning to Normal. We can even have Command-line returning to Visual returning to Normal, and this isn't
+    // single-execution mode.
+    // Single-execution mode allows changing mode further, so we can be in Visual returning to Normal returning to
+    // Insert (returning to Normal) with `i<C-O>v` aka "Insert Visual mode". We could even be in Command-line ultimately
+    // returning to Replace with `R<C-O>v/foo`. But they all have Normal mode returning to non-Normal, so we could
+    // recursively look for this.
+    // We also need to check for Support mode, which also supports single-execution mode, although this switches to
+    // Visual mode. E.g. with `:set selectmode=key keymodel=startsel`, then `i<S-Right>` will be Select mode returning
+    // to Normal, returning to Insert (returning to Normal) aka "Insert Select mode". See also `:help v_CTRL-O`.
+    return (this != Mode.NORMAL() && this.returnTo != Mode.NORMAL()) || (this == Mode.NORMAL() && this.returnTo != this)
+  }
 
 /**
  * Check if the caret can be placed after the end of line.
  *
  * `onemore` option is ignored.
  */
-public val Mode.isEndAllowedIgnoringOnemore: Boolean
+val Mode.isEndAllowedIgnoringOnemore: Boolean
   get() = when (this) {
     is Mode.INSERT, is Mode.VISUAL, is Mode.SELECT -> true
     else -> false
   }
 
-public val SelectionType.isLine: Boolean get() = this == SelectionType.LINE_WISE
-public val SelectionType.isChar: Boolean get() = this == SelectionType.CHARACTER_WISE
-public val SelectionType.isBlock: Boolean get() = this == SelectionType.BLOCK_WISE
+val SelectionType.isLine: Boolean get() = this == SelectionType.LINE_WISE
+val SelectionType.isChar: Boolean get() = this == SelectionType.CHARACTER_WISE
+val SelectionType.isBlock: Boolean get() = this == SelectionType.BLOCK_WISE
 
 /**
  * Convert the IdeaVim [Mode] into a string according to the rules of `mode()` function in Vim.
@@ -100,7 +106,7 @@ public val SelectionType.isBlock: Boolean get() = this == SelectionType.BLOCK_WI
  *   be added. It's better not to compare the whole string but only
  *   the leading character(s).
  */
-public fun Mode.toVimNotation(): String {
+fun Mode.toVimNotation(): String {
   return when (this) {
     is Mode.NORMAL -> "n"
     is Mode.VISUAL -> when (selectionType) {
@@ -121,51 +127,3 @@ public fun Mode.toVimNotation(): String {
     is Mode.OP_PENDING -> "no"
   }
 }
-
-public fun Mode.returnTo(): Mode {
-  return when (this) {
-    is Mode.CMD_LINE -> {
-      val returnMode = returnTo as Mode
-      // We need to understand logic that doesn't exit visual if it's just visual,
-      //   but exits visual if it's one-time visual
-      if (returnMode.returnTo != null) {
-        returnMode.returnTo()
-      } else {
-        returnMode
-      }
-    }
-
-    Mode.INSERT -> Mode.NORMAL()
-    is Mode.NORMAL -> when (returnTo) {
-      ReturnTo.INSERT -> Mode.INSERT
-      ReturnTo.REPLACE -> Mode.REPLACE
-      null -> Mode.NORMAL()
-    }
-
-    is Mode.OP_PENDING -> when (returnTo) {
-      ReturnTo.INSERT -> Mode.INSERT
-      ReturnTo.REPLACE -> Mode.REPLACE
-      null -> Mode.NORMAL()
-    }
-
-    Mode.REPLACE -> Mode.NORMAL()
-    is Mode.SELECT -> when (returnTo) {
-      ReturnTo.INSERT -> Mode.INSERT
-      ReturnTo.REPLACE -> Mode.REPLACE
-      null -> Mode.NORMAL()
-    }
-
-    is Mode.VISUAL -> when (returnTo) {
-      ReturnTo.INSERT -> Mode.INSERT
-      ReturnTo.REPLACE -> Mode.REPLACE
-      null -> Mode.NORMAL()
-    }
-  }
-}
-
-public val Mode.toReturnTo: ReturnTo
-  get() = when (this) {
-    Mode.INSERT -> ReturnTo.INSERT
-    Mode.REPLACE -> ReturnTo.REPLACE
-    else -> error("Cannot get return to from $this")
-  }

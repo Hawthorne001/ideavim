@@ -498,11 +498,87 @@ Contributors:
 * [![icon][mail]](mailto:81118900+lippfi@users.noreply.github.com)
   [![icon][github]](https://github.com/lippfi)
   &nbsp;
-  lippfi, 
+  lippfi
 * [![icon][mail]](mailto:fillipser143@gmail.com)
   [![icon][github]](https://github.com/Parker7123)
   &nbsp;
   FilipParker
+* [![icon][mail]](mailto:7138209+duhaesbaert@users.noreply.github.com)
+  [![icon][github]](https://github.com/duhaesbaert)
+  &nbsp;
+  Eduardo Haesbaert
+* [![icon][mail]](mailto:nikolaevsky.egor@gmail.com)
+  [![icon][github]](https://github.com/Aisper)
+  &nbsp;
+  Egor Nikolaevsky
+* [![icon][mail]](mailto:77796630+throwaway69420-69420@users.noreply.github.com)
+  [![icon][github]](https://github.com/kun-codes)
+  &nbsp;
+  Bishwa Saha
+* [![icon][mail]](mailto:alexfu@fastmail.com)
+  [![icon][github]](https://github.com/alexfu)
+  &nbsp;
+  Alex Fu
+* [![icon][mail]](mailto:jakepeters199@hotmail.com)
+  [![icon][github]](https://github.com/LazyScaper)
+  &nbsp;
+  Jake
+* [![icon][mail]](mailto:the1xdeveloper@gmail.com)
+  [![icon][github]](https://github.com/The1xDeveloper)
+  &nbsp;
+  The1xDeveloper
+* [![icon][mail]](mailto:shaunewilliams@gmail.com)
+  [![icon][github]](https://github.com/shaunlebron)
+  &nbsp;
+  shaun
+* [![icon][mail]](mailto:i.i.babko@gmail.com)
+  [![icon][github]](https://github.com/igorbabko)
+  &nbsp;
+  Igor Babko
+* [![icon][mail]](mailto:533601+felixwiemuth@users.noreply.github.com)
+  [![icon][github]](https://github.com/felixwiemuth)
+  &nbsp;
+  Felix Wiemuth
+* [![icon][mail]](mailto:kirill.karnaukhov@jetbrains.com)
+  [![icon][github]](https://github.com/kkarnauk)
+  &nbsp;
+  Kirill Karnaukhov
+* [![icon][mail]](mailto:sander.hestvik@gmail.com)
+  [![icon][github]](https://github.com/SanderHestvik)
+  &nbsp;
+  SanderHestvik
+* [![icon][mail]](mailto:gregory.shrago@jetbrains.com)
+  [![icon][github]](https://github.com/gregsh)
+  &nbsp;
+  Greg Shrago
+* [![icon][mail]](mailto:jphalip@gmail.com)
+  [![icon][github]](https://github.com/jphalip)
+  &nbsp;
+  Julien Phalip
+* [![icon][mail]](mailto:j.trimailovas@gmail.com)
+  [![icon][github]](https://github.com/trimailov)
+  &nbsp;
+  Justas Trimailovas
+* [![icon][mail]](mailto:justast@wix.com)
+  [![icon][github]](https://github.com/justast-wix)
+  &nbsp;
+  Justas Trimailovas
+* [![icon][mail]](mailto:wangxinhe06@gmail.com)
+  [![icon][github]](https://github.com/wxh06)
+  &nbsp;
+  Xinhe Wang
+* [![icon][mail]](mailto:vladimir.parfinenko@jetbrains.com)
+  [![icon][github]](https://github.com/cypok)
+  &nbsp;
+  Vladimir Parfinenko
+* [![icon][mail]](mailto:sdoerner@google.com)
+  [![icon][github]](https://github.com/sdoerner)
+  &nbsp;
+  Sebastian Dörner
+* [![icon][mail]](mailto:ocordova@pulsarml.com)
+  [![icon][github]](https://github.com/oca159)
+  &nbsp;
+  Osvaldo
 
 Previous contributors:
 

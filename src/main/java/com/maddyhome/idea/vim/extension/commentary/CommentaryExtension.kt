@@ -18,21 +18,20 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.util.PsiTreeUtil
+import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.ImmutableVimCaret
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.getLineEndOffset
 import com.maddyhome.idea.vim.api.globalOptions
 import com.maddyhome.idea.vim.api.injector
-import com.maddyhome.idea.vim.command.Argument
-import com.maddyhome.idea.vim.command.Command
-import com.maddyhome.idea.vim.command.CommandFlags
 import com.maddyhome.idea.vim.command.MappingMode
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.command.TextObjectVisualType
 import com.maddyhome.idea.vim.common.CommandAliasHandler
 import com.maddyhome.idea.vim.common.TextRange
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
+import com.maddyhome.idea.vim.ex.ranges.toTextRange
 import com.maddyhome.idea.vim.extension.ExtensionHandler
 import com.maddyhome.idea.vim.extension.VimExtension
 import com.maddyhome.idea.vim.extension.VimExtensionFacade
@@ -44,14 +43,12 @@ import com.maddyhome.idea.vim.extension.VimExtensionFacade.putKeyMappingIfMissin
 import com.maddyhome.idea.vim.extension.exportOperatorFunction
 import com.maddyhome.idea.vim.handler.TextObjectActionHandler
 import com.maddyhome.idea.vim.helper.PsiHelper
-import com.maddyhome.idea.vim.helper.vimStateMachine
 import com.maddyhome.idea.vim.key.OperatorFunction
 import com.maddyhome.idea.vim.newapi.IjVimEditor
 import com.maddyhome.idea.vim.newapi.ij
 import com.maddyhome.idea.vim.newapi.vim
 import com.maddyhome.idea.vim.state.mode.Mode
 import com.maddyhome.idea.vim.state.mode.SelectionType
-import java.util.*
 
 internal class CommentaryExtension : VimExtension {
 
@@ -63,7 +60,7 @@ internal class CommentaryExtension : VimExtension {
       selectionType: SelectionType,
       resetCaret: Boolean = true,
     ): Boolean {
-      val mode = editor.vimStateMachine.mode
+      val mode = editor.mode
       if (mode !is Mode.VISUAL) {
         editor.ij.selectionModel.setSelection(range.startOffset, range.endOffset)
       }
@@ -78,11 +75,12 @@ internal class CommentaryExtension : VimExtension {
 
         val project = editor.ij.project!!
         val callback = { afterCommenting(mode, editor, resetCaret, range) }
-        actions.any { executeActionWithCallbackOnSuccess(it, project, context, callback) }
+        actions.any { executeActionWithCallbackOnSuccess(editor, it, project, context, callback) }
       }
     }
 
     private fun executeActionWithCallbackOnSuccess(
+      editor: VimEditor,
       action: String,
       project: Project,
       context: ExecutionContext,
@@ -91,7 +89,7 @@ internal class CommentaryExtension : VimExtension {
       val res = Ref.create<Boolean>(false)
       AsyncActionExecutionService.getInstance(project).withExecutionAfterAction(
         action,
-        { res.set(injector.actionExecutor.executeAction(action, context)) },
+        { res.set(injector.actionExecutor.executeAction(editor, name = action, context = context)) },
         { if (res.get()) callback() })
       return res.get()
     }
@@ -182,10 +180,8 @@ internal class CommentaryExtension : VimExtension {
     override val isRepeatable = true
 
     override fun execute(editor: VimEditor, context: ExecutionContext, operatorArguments: OperatorArguments) {
-      val commandState = editor.vimStateMachine
-
-      val command = Command(operatorArguments.count1, CommentaryTextObjectMotionHandler, Command.Type.MOTION, EnumSet.noneOf(CommandFlags::class.java))
-      commandState.commandBuilder.completeCommandPart(Argument(command))
+      val keyState = KeyHandler.getInstance().keyHandlerState
+      keyState.commandBuilder.addAction(CommentaryTextObjectMotionHandler)
     }
   }
 
@@ -248,8 +244,14 @@ internal class CommentaryExtension : VimExtension {
    * Used like `:1,3Commentary` or `g/fun/Commentary`
    */
   private class CommentaryCommandAliasHandler : CommandAliasHandler {
-    override fun execute(command: String, ranges: Ranges, editor: VimEditor, context: ExecutionContext) {
-      Util.doCommentary(editor, context, ranges.getTextRange(editor, -1), SelectionType.LINE_WISE, false)
+    override fun execute(command: String, range: Range, editor: VimEditor, context: ExecutionContext) {
+      Util.doCommentary(
+        editor,
+        context,
+        range.getLineRange(editor, editor.primaryCaret()).toTextRange(editor),
+        SelectionType.LINE_WISE,
+        false
+      )
     }
   }
 }

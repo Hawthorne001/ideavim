@@ -10,10 +10,10 @@ package org.jetbrains.plugins.ideavim.action
 import com.intellij.idea.TestFor
 import com.intellij.testFramework.LoggedErrorProcessor
 import com.maddyhome.idea.vim.KeyHandler
-import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.api.keys
 import com.maddyhome.idea.vim.command.MappingMode
+import com.maddyhome.idea.vim.newapi.vim
 import org.jetbrains.plugins.ideavim.ExceptionHandler
 import org.jetbrains.plugins.ideavim.OnlyThrowLoggedErrorProcessor
 import org.jetbrains.plugins.ideavim.SkipNeovimReason
@@ -52,15 +52,18 @@ class MacroActionTest : VimTestCase() {
     configureByText("")
     enterCommand("imap pp hello")
     typeText(injector.parser.parseKeys("qa" + "i" + "pp<Esc>" + "q"))
-    assertRegister('a', "ipp<Esc>")
+    assertRegister('a', "ipp^[")
   }
 
   @Test
   fun testRecordMacroWithDigraph() {
     typeTextInFile(injector.parser.parseKeys("qa" + "i" + "<C-K>OK<Esc>" + "q"), "")
-    val register = VimPlugin.getRegister().getRegister('a')
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    val registerService = injector.registerGroup
+    val register = registerService.getRegister(vimEditor, context, 'a')
     assertNotNull<Any>(register)
-    assertRegister('a', "i<C-K>OK<Esc>")
+    assertRegister('a', "i^KOK^[")
   }
 
   @Test
@@ -96,7 +99,10 @@ class MacroActionTest : VimTestCase() {
     configureByText(content)
     typeText(injector.parser.parseKeys("qa" + ":map x y<CR>" + "q"))
 
-    val register = VimPlugin.getRegister().getRegister('a')
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    val registerService = injector.registerGroup
+    val register = registerService.getRegister(vimEditor, context, 'a')
     val registerSize = register!!.keys.size
     assertEquals(9, registerSize)
   }
@@ -153,14 +159,16 @@ class MacroActionTest : VimTestCase() {
     )
 
     assertRegister('b', "6@a")
-    assertState("""
+    assertState(
+      """
             Lorem Ipsum
 
             Lorem ipsum dolor ${c}sit amet,
             consectetur adipiscing elit
             Sed in orci mauris.
             Cras id tellus in ex imperdiet egestas.
-    """.trimIndent())
+    """.trimIndent()
+    )
   }
 
   @Test
@@ -185,14 +193,16 @@ class MacroActionTest : VimTestCase() {
 
     assertRegister('b', "3@a")
     assertRegister('c', "2@b")
-    assertState("""
+    assertState(
+      """
             Lorem Ipsum
 
             Lorem ipsum dolor ${c}sit amet,
             consectetur adipiscing elit
             Sed in orci mauris.
             Cras id tellus in ex imperdiet egestas.
-    """.trimIndent())
+    """.trimIndent()
+    )
   }
 
   @Test
@@ -244,8 +254,10 @@ class MacroActionTest : VimTestCase() {
     )
     injector.keyGroup.putKeyMapping(MappingMode.NXO, keys("abc"), exceptionMappingOwner, ExceptionHandler(), false)
 
-    injector.registerGroup.storeText('k', "abc")
-    injector.registerGroup.storeText('q', "x@ky")
+    val vimEditor = fixture.editor.vim
+    val context = injector.executionContextManager.getEditorExecutionContext(vimEditor)
+    injector.registerGroup.storeText(vimEditor, context, 'k', "abc")
+    injector.registerGroup.storeText(vimEditor, context, 'q', "x@ky")
 
     val exception = assertThrows<Throwable> {
       LoggedErrorProcessor.executeWith<Throwable>(OnlyThrowLoggedErrorProcessor) {

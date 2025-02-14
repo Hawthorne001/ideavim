@@ -18,18 +18,18 @@ import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.CommandFlags
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.common.TextRange
 import com.maddyhome.idea.vim.group.visual.VimSelection
 import com.maddyhome.idea.vim.handler.VisualOperatorActionHandler
 import com.maddyhome.idea.vim.helper.enumSetOf
+import com.maddyhome.idea.vim.state.mode.SelectionType
 import java.util.*
 
 /**
  * @author vlan
  */
 @CommandOrMotion(keys = ["D"], modes = [Mode.VISUAL])
-public class DeleteVisualLinesEndAction : VisualOperatorActionHandler.ForEachCaret() {
+class DeleteVisualLinesEndAction : VisualOperatorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.DELETE
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_MOT_LINEWISE)
@@ -54,11 +54,11 @@ public class DeleteVisualLinesEndAction : VisualOperatorActionHandler.ForEachCar
       val blockRange = TextRange(starts, ends)
       injector.changeGroup.deleteRange(
         editor,
+        context,
         editor.primaryCaret(),
         blockRange,
         SelectionType.BLOCK_WISE,
         false,
-        operatorArguments,
       )
     } else {
       val lineEndForOffset = editor.getLineEndForOffset(vimTextRange.endOffset)
@@ -67,7 +67,7 @@ public class DeleteVisualLinesEndAction : VisualOperatorActionHandler.ForEachCar
         editor.getLineStartForOffset(vimTextRange.startOffset),
         lineEndForOffset + endsWithNewLine,
       )
-      injector.changeGroup.deleteRange(editor, caret, lineRange, SelectionType.LINE_WISE, false, operatorArguments)
+      injector.changeGroup.deleteRange(editor, context, caret, lineRange, SelectionType.LINE_WISE, false)
     }
   }
 }

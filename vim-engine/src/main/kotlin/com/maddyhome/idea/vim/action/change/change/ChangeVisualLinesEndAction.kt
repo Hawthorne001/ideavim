@@ -19,18 +19,18 @@ import com.maddyhome.idea.vim.command.Command
 import com.maddyhome.idea.vim.command.CommandFlags
 import com.maddyhome.idea.vim.command.CommandFlags.FLAG_MOT_LINEWISE
 import com.maddyhome.idea.vim.command.OperatorArguments
-import com.maddyhome.idea.vim.state.mode.SelectionType
 import com.maddyhome.idea.vim.common.TextRange
 import com.maddyhome.idea.vim.group.visual.VimSelection
 import com.maddyhome.idea.vim.handler.VisualOperatorActionHandler
 import com.maddyhome.idea.vim.helper.enumSetOf
+import com.maddyhome.idea.vim.state.mode.SelectionType
 import java.util.*
 
 /**
  * @author vlan
  */
 @CommandOrMotion(keys = ["C"], modes = [Mode.VISUAL])
-public class ChangeVisualLinesEndAction : VisualOperatorActionHandler.ForEachCaret() {
+class ChangeVisualLinesEndAction : VisualOperatorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.CHANGE
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(FLAG_MOT_LINEWISE)
@@ -53,7 +53,7 @@ public class ChangeVisualLinesEndAction : VisualOperatorActionHandler.ForEachCar
         }
       }
       val blockRange = TextRange(starts, ends)
-      injector.changeGroup.changeRange(editor, caret, blockRange, SelectionType.BLOCK_WISE, context, operatorArguments)
+      injector.changeGroup.changeRange(editor, caret, blockRange, SelectionType.BLOCK_WISE, context)
     } else {
       val lineEndForOffset = editor.getLineEndForOffset(vimTextRange.endOffset)
       val endsWithNewLine = if (lineEndForOffset.toLong() == editor.fileSize()) 0 else 1
@@ -61,7 +61,7 @@ public class ChangeVisualLinesEndAction : VisualOperatorActionHandler.ForEachCar
         editor.getLineStartForOffset(vimTextRange.startOffset),
         lineEndForOffset + endsWithNewLine,
       )
-      injector.changeGroup.changeRange(editor, caret, lineRange, SelectionType.LINE_WISE, context, operatorArguments)
+      injector.changeGroup.changeRange(editor, caret, lineRange, SelectionType.LINE_WISE, context)
     }
   }
 }

@@ -22,10 +22,12 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.util.ui.EmptyClipboardOwner
+import com.maddyhome.idea.vim.api.ExecutionContext
 import com.maddyhome.idea.vim.api.VimClipboardManager
 import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.common.TextRange
+import com.maddyhome.idea.vim.common.VimCopiedText
 import com.maddyhome.idea.vim.diagnostic.debug
 import com.maddyhome.idea.vim.diagnostic.vimLogger
 import java.awt.HeadlessException
@@ -37,18 +39,56 @@ import java.io.IOException
 
 @Service
 internal class IjClipboardManager : VimClipboardManager {
+  @Deprecated("Please use com.maddyhome.idea.vim.api.VimClipboardManager#getPrimaryTextAndTransferableData")
   override fun getPrimaryTextAndTransferableData(): Pair<String, List<Any>?>? {
     val clipboard = Toolkit.getDefaultToolkit()?.systemSelection ?: return null
     val contents = clipboard.getContents(null) ?: return null
     return getTextAndTransferableData(contents)
   }
 
+  override fun getPrimaryContent(editor: VimEditor, context: ExecutionContext): IjVimCopiedText? {
+    val (text, transferableData) = getPrimaryTextAndTransferableData() ?: return null
+    return IjVimCopiedText(text, transferableData ?: emptyList())
+  }
+
+  @Deprecated("Please use com.maddyhome.idea.vim.api.VimClipboardManager#getClipboardTextAndTransferableData")
   override fun getClipboardTextAndTransferableData(): Pair<String, List<Any>?>? {
     val contents = getContents() ?: return null
     return getTextAndTransferableData(contents)
   }
 
-  private fun getTextAndTransferableData(trans: Transferable): Pair<String, List<Any>?>? {
+  override fun getClipboardContent(editor: VimEditor, context: ExecutionContext): VimCopiedText? {
+    val (text, transferableData) = getClipboardTextAndTransferableData() ?: return null
+    return IjVimCopiedText(text, transferableData ?: emptyList())
+  }
+
+  override fun setClipboardContent(editor: VimEditor, context: ExecutionContext, textData: VimCopiedText): Boolean {
+    require(textData is IjVimCopiedText)
+    return handleTextSetting(
+      textData.text,
+      textData.text,
+      textData.transferableData
+    ) { content -> setContents(content) } != null
+  }
+
+  // TODO prefer methods with ranges, because they collect and preprocess for us
+//  override fun createClipboardEntry(
+//    editor: VimEditor,
+//    context: ExecutionContext,
+//    text: String,
+//    range: TextRange,
+//  ): ClipboardEntry {
+//    val transferableData = getTransferableData(editor, range, text)
+//    val preprocessedText = preprocessText(editor, range, text, transferableData)
+//    return IJClipboardEntry(preprocessedText, text, transferableData)
+//  }
+
+//  override fun setClipboardText(editor: VimEditor, context: ExecutionContext, entry: ClipboardEntry): Boolean {
+//    require(entry is IJClipboardEntry)
+//    return setClipboardText(entry.text, entry.rawText, entry.transferableData) != null
+//  }
+
+  private fun getTextAndTransferableData(trans: Transferable): Pair<String, List<TextBlockTransferableData>?>? {
     var res: String? = null
     var transferableData: List<TextBlockTransferableData> = ArrayList()
     try {
@@ -63,10 +103,29 @@ internal class IjClipboardManager : VimClipboardManager {
     return Pair(res, transferableData)
   }
 
+  @Deprecated("Please use com.maddyhome.idea.vim.api.VimClipboardManager#setClipboardText")
   override fun setClipboardText(text: String, rawText: String, transferableData: List<Any>): Transferable? {
     return handleTextSetting(text, rawText, transferableData) { content -> setContents(content) }
   }
 
+  override fun setPrimaryContent(
+    editor: VimEditor,
+    context: ExecutionContext,
+    textData: VimCopiedText,
+  ): Boolean {
+    require(textData is IjVimCopiedText)
+    return handleTextSetting(textData.text, textData.text, textData.transferableData) { content ->
+      val clipboard = Toolkit.getDefaultToolkit()?.systemSelection ?: return@handleTextSetting null
+      clipboard.setContents(content, EmptyClipboardOwner.INSTANCE)
+    } != null
+  }
+
+//  override fun setPrimaryText(editor: VimEditor, context: ExecutionContext, entry: ClipboardEntry): Boolean {
+//    require(entry is IJClipboardEntry)
+//    return setPrimaryText(entry.text, entry.rawText, entry.transferableData) != null
+//  }
+
+  @Deprecated("Please use com.maddyhome.idea.vim.api.VimClipboardManager#setPrimaryText")
   override fun setPrimaryText(text: String, rawText: String, transferableData: List<Any>): Transferable? {
     return handleTextSetting(text, rawText, transferableData) { content ->
       val clipboard = Toolkit.getDefaultToolkit()?.systemSelection ?: return@handleTextSetting null
@@ -74,8 +133,28 @@ internal class IjClipboardManager : VimClipboardManager {
     }
   }
 
+  override fun collectCopiedText(
+    editor: VimEditor,
+    context: ExecutionContext,
+    range: TextRange,
+    text: String,
+  ): VimCopiedText {
+    val transferableData = getTransferableData(editor, range)
+    val preprocessedText = preprocessText(editor, range, text, transferableData)
+    return IjVimCopiedText(preprocessedText, transferableData)
+  }
+
+  override fun dumbCopiedText(text: String): VimCopiedText {
+    return IjVimCopiedText(text, emptyList())
+  }
+
   @Suppress("UNCHECKED_CAST")
-  private fun handleTextSetting(text: String, rawText: String, transferableData: List<Any>, setContent: (TextBlockTransferable) -> Unit?): Transferable? {
+  private fun handleTextSetting(
+    text: String,
+    rawText: String,
+    transferableData: List<Any>,
+    setContent: (TextBlockTransferable) -> Unit?,
+  ): Transferable? {
     val mutableTransferableData = (transferableData as List<TextBlockTransferableData>).toMutableList()
     try {
       val s = TextBlockTransferable.convertLineSeparators(text, "\n", mutableTransferableData)
@@ -92,7 +171,7 @@ internal class IjClipboardManager : VimClipboardManager {
     return null
   }
 
-  override fun getTransferableData(vimEditor: VimEditor, textRange: TextRange, text: String): List<Any> {
+  override fun getTransferableData(vimEditor: VimEditor, textRange: TextRange): List<TextBlockTransferableData> {
     val editor = (vimEditor as IjVimEditor).editor
     val transferableData: MutableList<TextBlockTransferableData> = ArrayList()
     val project = editor.project ?: return emptyList()
@@ -117,7 +196,12 @@ internal class IjClipboardManager : VimClipboardManager {
         }
       }
     }
-    transferableData.add(CaretStateTransferableData(intArrayOf(0), intArrayOf(text.length)))
+    transferableData.add(
+      CaretStateTransferableData(
+        intArrayOf(0),
+        intArrayOf(textRange.endOffset - textRange.startOffset)
+      )
+    )
 
     // These data provided by {@link com.intellij.openapi.editor.richcopy.TextWithMarkupProcessor} doesn't work with
     //   IdeaVim and I don't see a way to fix it
@@ -174,4 +258,8 @@ internal class IjClipboardManager : VimClipboardManager {
   companion object {
     val logger = vimLogger<IjClipboardManager>()
   }
+}
+
+data class IjVimCopiedText(override val text: String, val transferableData: List<Any>) : VimCopiedText {
+  override fun updateText(newText: String): VimCopiedText = IjVimCopiedText(newText, transferableData)
 }

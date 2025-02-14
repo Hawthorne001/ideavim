@@ -25,7 +25,7 @@ import com.maddyhome.idea.vim.state.mode.SelectionType
 import java.util.*
 
 @CommandOrMotion(keys = ["<C-W>"], modes = [Mode.INSERT])
-public class InsertDeletePreviousWordAction : ChangeEditorActionHandler.ForEachCaret() {
+class InsertDeletePreviousWordAction : ChangeEditorActionHandler.ForEachCaret() {
   override val type: Command.Type = Command.Type.INSERT
 
   override val flags: EnumSet<CommandFlags> = enumSetOf(CommandFlags.FLAG_CLEAR_STROKES)
@@ -37,7 +37,7 @@ public class InsertDeletePreviousWordAction : ChangeEditorActionHandler.ForEachC
     argument: Argument?,
     operatorArguments: OperatorArguments,
   ): Boolean {
-    return insertDeletePreviousWord(editor, caret, operatorArguments)
+    return insertDeletePreviousWord(editor, context, caret)
   }
 }
 
@@ -50,7 +50,7 @@ public class InsertDeletePreviousWordAction : ChangeEditorActionHandler.ForEachC
  * @param editor The editor to delete the text from
  * @return true if able to delete text, false if not
  */
-private fun insertDeletePreviousWord(editor: VimEditor, caret: VimCaret, operatorArguments: OperatorArguments): Boolean {
+private fun insertDeletePreviousWord(editor: VimEditor, context: ExecutionContext, caret: VimCaret): Boolean {
   val deleteTo: Int = if (caret.getBufferPosition().column == 0) {
     caret.offset - 1
   } else {
@@ -74,6 +74,6 @@ private fun insertDeletePreviousWord(editor: VimEditor, caret: VimCaret, operato
     return false
   }
   val range = TextRange(deleteTo, caret.offset)
-  injector.changeGroup.deleteRange(editor, caret, range, SelectionType.CHARACTER_WISE, true, operatorArguments)
+  injector.changeGroup.deleteRange(editor, context, caret, range, SelectionType.CHARACTER_WISE, true)
   return true
 }

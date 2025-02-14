@@ -14,18 +14,16 @@ import com.maddyhome.idea.vim.api.VimEditor
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.api.invertToggleOption
 import com.maddyhome.idea.vim.api.isDefaultValue
-import com.maddyhome.idea.vim.api.resetDefaultValue
 import com.maddyhome.idea.vim.api.setToggleOption
 import com.maddyhome.idea.vim.api.unsetToggleOption
 import com.maddyhome.idea.vim.command.OperatorArguments
 import com.maddyhome.idea.vim.ex.ExException
 import com.maddyhome.idea.vim.ex.exExceptionMessage
-import com.maddyhome.idea.vim.ex.ranges.Ranges
+import com.maddyhome.idea.vim.ex.ranges.Range
 import com.maddyhome.idea.vim.helper.Msg
 import com.maddyhome.idea.vim.options.NumberOption
 import com.maddyhome.idea.vim.options.Option
 import com.maddyhome.idea.vim.options.OptionAccessScope
-import com.maddyhome.idea.vim.options.OptionDeclaredScope
 import com.maddyhome.idea.vim.options.StringListOption
 import com.maddyhome.idea.vim.options.StringOption
 import com.maddyhome.idea.vim.options.ToggleOption
@@ -40,30 +38,38 @@ import kotlin.math.ceil
  * see "h :set"
  */
 @ExCommand(command = "se[t]")
-public data class SetCommand(val ranges: Ranges, val argument: String) : SetCommandBase(ranges, argument) {
+data class SetCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  SetCommandBase(range, modifier, argument) {
+
   override fun getScope(editor: VimEditor): OptionAccessScope = OptionAccessScope.EFFECTIVE(editor)
 }
 
 @ExCommand(command = "setg[lobal]")
-public data class SetglobalCommand(val ranges: Ranges, val argument: String) : SetCommandBase(ranges, argument) {
+data class SetglobalCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  SetCommandBase(range, modifier, argument) {
+
   override fun getScope(editor: VimEditor): OptionAccessScope = OptionAccessScope.GLOBAL(editor)
 }
 
 @ExCommand(command = "setl[ocal]")
-public data class SetlocalCommand(val ranges: Ranges, val argument: String) : SetCommandBase(ranges, argument) {
+data class SetlocalCommand(val range: Range, val modifier: CommandModifier, val argument: String) :
+  SetCommandBase(range, modifier, argument) {
+
   override fun getScope(editor: VimEditor): OptionAccessScope = OptionAccessScope.LOCAL(editor)
 }
 
-public abstract class SetCommandBase(ranges: Ranges, argument: String) : Command.SingleExecution(ranges, argument) {
+abstract class SetCommandBase(range: Range, modifier: CommandModifier, argument: String) :
+  Command.SingleExecution(range, modifier, argument) {
+
   override val argFlags: CommandHandlerFlags =
     flags(RangeFlag.RANGE_OPTIONAL, ArgumentFlag.ARGUMENT_OPTIONAL, Access.READ_ONLY)
 
   override fun processCommand(
     editor: VimEditor,
     context: ExecutionContext,
-    operatorArguments: OperatorArguments
+    operatorArguments: OperatorArguments,
   ): ExecutionResult {
-    parseOptionLine(editor, commandArgument, getScope(editor))
+    parseOptionLine(editor, context, commandModifier, commandArgument, getScope(editor))
     return ExecutionResult.Success
   }
 
@@ -92,31 +98,43 @@ public abstract class SetCommandBase(ranges: Ranges, argument: String) : Command
  *    the first error, such as an unknown option or an incorrectly formatted operation.
  *
  * @param editor    The editor the command was entered for, null if no editor - reading .ideavimrc
- * @param args      The raw text passed to the `:set` command
+ * @param argument      The raw text passed to the `:set` command
  * @throws ExException Thrown if any option names or operations are incorrect
  */
-public fun parseOptionLine(editor: VimEditor, args: String, scope: OptionAccessScope) {
+fun parseOptionLine(
+  editor: VimEditor,
+  context: ExecutionContext,
+  commandModifier: CommandModifier,
+  argument: String,
+  scope: OptionAccessScope,
+) {
   val optionGroup = injector.optionGroup
 
-  val columnFormat = args.startsWith("!")
-  val argument = args.removePrefix("!").trimStart()
+  val columnFormat = commandModifier == CommandModifier.BANG
 
   when {
     argument.isEmpty() -> {
       // No arguments mean we show only changed values
       val changedOptions = optionGroup.getAllOptions()
-        .filter { !optionGroup.isDefaultValue(it, scope) && (!it.isHidden || (injector.application.isInternal() && !injector.application.isUnitTest())) }
+        .filter {
+          !optionGroup.isDefaultValue(
+            it,
+            scope
+          ) && (!it.isHidden || (injector.application.isInternal() && !injector.application.isUnitTest()))
+        }
         .map { Pair(it.name, it.name) }
-      showOptions(editor, changedOptions, scope, true, columnFormat)
+      showOptions(editor, context, changedOptions, scope, true, columnFormat)
       return
     }
+
     argument == "all" -> {
       val options = optionGroup.getAllOptions()
         .filter { !it.isHidden || (injector.application.isInternal() && !injector.application.isUnitTest()) }
         .map { Pair(it.name, it.name) }
-      showOptions(editor, options, scope, true, columnFormat)
+      showOptions(editor, context, options, scope, true, columnFormat)
       return
     }
+
     argument == "all&" -> {
       // Note that `all&` resets all options in the current editor at local and global scope. This includes global,
       // global-local and local-to-buffer options, which will affect other windows. It does not affect the local values
@@ -152,15 +170,8 @@ public fun parseOptionLine(editor: VimEditor, args: String, scope: OptionAccessS
         )
 
         token.endsWith("!") -> optionGroup.invertToggleOption(getValidToggleOption(token.dropLast(1), token), scope)
-        token.endsWith("&") -> optionGroup.resetDefaultValue(getValidOption(token.dropLast(1), token), scope)
-        token.endsWith("<") -> {
-          // Copy the global value to the target scope. If the target scope is global, this is a no-op. When copying a
-          // string global-local option to effective scope, Vim's behaviour matches setting that option at effective
-          // scope. That is, it sets the global value (a no-op) and resets the local value.
-          val option = getValidOption(token.dropLast(1), token)
-          val globalValue = optionGroup.getOptionValue(option, OptionAccessScope.GLOBAL(editor))
-          optionGroup.setOptionValue(option, scope, globalValue)
-        }
+        token.endsWith("&") -> optionGroup.resetToDefaultValue(getValidOption(token.dropLast(1), token), scope)
+        token.endsWith("<") -> optionGroup.resetToGlobalValue(getValidOption(token.dropLast(1), token), scope, editor)
         else -> {
           // `getOption` returns `Option<VimDataType>?`, but we need to treat it as `Option<out VimDataType>?` because
           // `ToggleOption` derives from `Option<out VimDataType>`, and the compiler will complain if the types are
@@ -173,8 +184,7 @@ public fun parseOptionLine(editor: VimEditor, args: String, scope: OptionAccessS
           }
         }
       }
-    }
-    else {
+    } else {
       // This must be one of =, :, +=, -=, or ^=
       val eq = token.indexOf('=')
       val colon = token.indexOf(':')
@@ -196,8 +206,7 @@ public fun parseOptionLine(editor: VimEditor, args: String, scope: OptionAccessS
           else -> value
         } ?: throw exExceptionMessage("E474", token)
         optionGroup.setOptionValue(option, scope, newValue)
-      }
-      else {
+      } else {
         // We're either missing the equals sign, the colon, or the option name itself
         error = Msg.unkopt
       }
@@ -208,8 +217,8 @@ public fun parseOptionLine(editor: VimEditor, args: String, scope: OptionAccessS
   }
 
   // Now show all options that were individually requested
-  if (toShow.size > 0) {
-    showOptions(editor, toShow, scope, false, columnFormat)
+  if (toShow.isNotEmpty()) {
+    showOptions(editor, context, toShow, scope, false, columnFormat)
   }
 
   if (error != null) {
@@ -225,10 +234,11 @@ private fun getValidToggleOption(optionName: String, token: String) =
 
 private fun showOptions(
   editor: VimEditor,
+  context: ExecutionContext,
   nameAndToken: Collection<Pair<String, String>>,
   scope: OptionAccessScope,
   showIntro: Boolean,
-  columnFormat: Boolean
+  columnFormat: Boolean,
 ) {
   val optionService = injector.optionGroup
   val optionsToShow = mutableListOf<Option<VimDataType>>()
@@ -252,9 +262,7 @@ private fun showOptions(
     if (columnFormat || optionAsString.length >= colWidth) extra.add(optionAsString) else cells.add(optionAsString)
   }
 
-  // Note that this is the approximate width of the associated editor, not the ex output panel!
-  // It excludes gutter width, for example
-  val width = injector.engineEditorHelper.getApproximateScreenWidth(editor).let { if (it < 20) 80 else it }
+  val width = injector.engineEditorHelper.getApproximateOutputPanelWidth(editor).let { if (it < 20) 80 else it }
   val colCount = width / colWidth
   val height = ceil(cells.size.toDouble() / colCount.toDouble()).toInt()
 
@@ -272,23 +280,19 @@ private fun showOptions(
       for (c in 0 until colCount) {
         val index = c * height + h
         if (index < cells.size) {
-          val padLength = lengthAtStartOfLine + (c * colWidth) - length
-          for (i in 1..padLength) {
-            append(' ')
-          }
-
+          repeat(lengthAtStartOfLine + (c * colWidth) - length) { append(' ') }
           append(cells[index])
         }
       }
       appendLine()
     }
 
-    // Add any lines that are too long to fit into columns. The panel will soft wrap text
+    // Add any lines that are too long to fit into columns. The panel will soft-wrap text
     for (option in extra) {
       appendLine(option)
     }
   }
-  injector.exOutputPanel.getPanel(editor).output(output)
+  injector.outputPanel.output(editor, context, output)
 
   if (unknownOption != null) {
     throw exExceptionMessage("E518", unknownOption.second)
@@ -300,9 +304,7 @@ private fun formatKnownOptionValue(option: Option<out VimDataType>, scope: Optio
   if (option is ToggleOption) {
 
     // Unset global-local toggle option
-    if ((option.declaredScope == OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_BUFFER
-        || option.declaredScope == OptionDeclaredScope.GLOBAL_OR_LOCAL_TO_WINDOW)
-      && scope is OptionAccessScope.LOCAL && value == VimInt.MINUS_ONE) {
+    if (option.declaredScope.isGlobalLocal() && scope is OptionAccessScope.LOCAL && value == VimInt.MINUS_ONE) {
       return "--${option.name}"
     }
 

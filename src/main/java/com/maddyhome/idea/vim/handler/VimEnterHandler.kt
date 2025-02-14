@@ -183,6 +183,7 @@ internal abstract class OctopusHandler(private val nextHandler: EditorActionHand
  * - App code - set handler after
  * - Template - doesn't intersect with enter anymore
  * - rd.client.editor.enter - set handler before. Otherwise, rider will add new line on enter even in normal mode
+ * - inline.completion.enter - set handler before. Otherwise, AI completion is not invoked on enter.
  *
  * This rule is disabled due to VIM-3124
  * - before terminalEnter - not necessary, but terminalEnter causes "file is read-only" tooltip for readonly files VIM-3122
@@ -218,13 +219,17 @@ internal class VimEnterHandler(nextHandler: EditorActionHandler?) : VimKeyHandle
 internal class VimEscHandler(nextHandler: EditorActionHandler) : VimKeyHandler(nextHandler) {
   override val key: String = "<Esc>"
 
-  override fun isHandlerEnabled(editor: Editor, dataContext: DataContext?): Boolean {
-    val ideaVimSupportDialog =
-      injector.globalIjOptions().ideavimsupport.contains(IjOptionConstants.ideavimsupport_dialog)
+  private val ideaVimSupportDialog
+    get() = injector.globalIjOptions().ideavimsupport.contains(IjOptionConstants.ideavimsupport_dialog)
 
+  override fun isHandlerEnabled(editor: Editor, dataContext: DataContext?): Boolean {
     return editor.isPrimaryEditor() ||
-      EditorHelper.isFileEditor(editor) && !editor.vim.mode.inNormalMode ||
-      ideaVimSupportDialog && !editor.vim.mode.inNormalMode
+      EditorHelper.isFileEditor(editor) && vimStateNeedsToHandleEscape(editor) ||
+      ideaVimSupportDialog && vimStateNeedsToHandleEscape(editor)
+  }
+
+  private fun vimStateNeedsToHandleEscape(editor: Editor): Boolean {
+    return !editor.vim.mode.inNormalMode || KeyHandler.getInstance().keyHandlerState.mappingState.hasKeys
   }
 }
 
@@ -337,7 +342,7 @@ internal abstract class VimKeyHandler(nextHandler: EditorActionHandler?) : Octop
 
   override fun executeHandler(editor: Editor, caret: Caret?, dataContext: DataContext?) {
     val enterKey = key(key)
-    val context = injector.executionContextManager.onEditor(editor.vim, dataContext?.vim)
+    val context = dataContext?.vim ?: injector.executionContextManager.getEditorExecutionContext(editor.vim)
     val keyHandler = KeyHandler.getInstance()
     keyHandler.handleKey(editor.vim, enterKey, context, keyHandler.keyHandlerState)
   }

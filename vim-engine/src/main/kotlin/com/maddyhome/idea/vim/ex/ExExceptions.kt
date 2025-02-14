@@ -9,19 +9,15 @@ package com.maddyhome.idea.vim.ex
 
 import com.maddyhome.idea.vim.api.injector
 
-public class InvalidCommandException(message: String, cmd: String?) : ExException(message + if (cmd != null) " | $cmd" else "")
+class InvalidCommandException(message: String, cmd: String?) : ExException(message + if (cmd != null) " | $cmd" else "")
 
-public class InvalidRangeException(s: String) : ExException(s)
+class InvalidRangeException(s: String) : ExException(s)
 
-public class MissingArgumentException : ExException()
+class MissingRangeException : ExException()
 
-public class MissingRangeException : ExException()
+class NoArgumentAllowedException : ExException()
 
-public class NoArgumentAllowedException : ExException()
+class FinishException : ExException()
 
-public class NoRangeAllowedException : ExException()
-
-public class FinishException : ExException()
-
-public fun exExceptionMessage(code: String, vararg params: Any): ExException =
+fun exExceptionMessage(code: String, vararg params: Any): ExException =
   ExException(injector.messages.message(code, *params)).apply { this.code = code }

@@ -7,6 +7,7 @@
  */
 package com.maddyhome.idea.vim.extension.surround
 
+import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.Editor
@@ -34,6 +35,7 @@ import com.maddyhome.idea.vim.extension.VimExtensionFacade.putKeyMappingIfMissin
 import com.maddyhome.idea.vim.extension.VimExtensionFacade.setRegisterForCaret
 import com.maddyhome.idea.vim.extension.exportOperatorFunction
 import com.maddyhome.idea.vim.group.findBlockRange
+import com.maddyhome.idea.vim.helper.exitVisualMode
 import com.maddyhome.idea.vim.key.OperatorFunction
 import com.maddyhome.idea.vim.newapi.ij
 import com.maddyhome.idea.vim.newapi.vim
@@ -96,7 +98,7 @@ internal class VimSurroundExtension : VimExtension {
       val ijEditor = editor.ij
       val c = getChar(ijEditor)
       if (c.code == 0) return
-      val pair = getOrInputPair(c, ijEditor) ?: return
+      val pair = getOrInputPair(c, ijEditor, context.ij) ?: return
 
       editor.forEachCaret {
         val line = it.getBufferPosition().line
@@ -110,6 +112,9 @@ internal class VimSurroundExtension : VimExtension {
 //        it.moveToOffset(lineStartOffset)
       }
       // Jump back to start
+      if (editor.mode !is Mode.NORMAL) {
+        editor.mode = Mode.NORMAL()
+      }
       executeNormalWithoutMapping(injector.parser.parseKeys("`["), ijEditor)
     }
 
@@ -132,7 +137,7 @@ internal class VimSurroundExtension : VimExtension {
       }
       runWriteAction {
         // Leave visual mode
-        executeNormalWithoutMapping(injector.parser.parseKeys("<Esc>"), editor.ij)
+        editor.exitVisualMode()
         editor.ij.caretModel.moveToOffset(selectionStart)
       }
     }
@@ -148,18 +153,18 @@ internal class VimSurroundExtension : VimExtension {
       val charTo = getChar(editor.ij)
       if (charTo.code == 0) return
 
-      val newSurround = getOrInputPair(charTo, editor.ij) ?: return
+      val newSurround = getOrInputPair(charTo, editor.ij, context.ij) ?: return
       runWriteAction { change(editor, context, charFrom, newSurround) }
     }
 
     companion object {
-      fun change(editor: VimEditor, context: ExecutionContext, charFrom: Char, newSurround: Pair<String, String>?) {
+      fun change(editor: VimEditor, context: ExecutionContext, charFrom: Char, newSurround: SurroundPair?) {
         // Save old register values for carets
         val surroundings = editor.sortedCarets()
           .map {
-            val oldValue: List<KeyStroke>? = getRegisterForCaret(REGISTER, it)
+            val oldValue: List<KeyStroke>? = getRegisterForCaret(editor, context, REGISTER, it)
             setRegisterForCaret(REGISTER, it, null)
-            SurroundingInfo(it, null, oldValue)
+            SurroundingInfo(it, null, oldValue, false)
           }
 
         // Delete surrounding's content
@@ -174,23 +179,27 @@ internal class VimSurroundExtension : VimExtension {
             editor.deleteString(currentSurrounding)
           }
 
-          val registerValue = getRegisterForCaret(REGISTER, it.caret)
-          val innerValue = if (registerValue.isNullOrEmpty()) null else registerValue
+          val registerValue = getRegisterForCaret(editor, context, REGISTER, it.caret)
+          val innerValue = if (registerValue.isNullOrEmpty()) emptyList() else registerValue
           it.innerText = innerValue
-        }
 
-        surroundings.forEach {
-          if (it.innerText == null && getRegisterForCaret(REGISTER, it.caret)?.isNotEmpty() == true) {
-            it.innerText = emptyList()
+          // Valid surroundings are only those that:
+          // - are validly wrapping with surround characters (i.e. parenthesis, brackets, tags, quotes, etc.);
+          // - or have non-empty inner text (e.g. when we are surrounding words: `csw"`)
+          if (currentSurrounding != null || innerValue.isNotEmpty()) {
+            it.isValidSurrounding = true
           }
         }
 
         surroundings
-          .filter { it.innerText != null } // we do nothing with carets that are not inside the surrounding
+          .filter { it.isValidSurrounding } // we do nothing with carets that are not inside the surrounding
           .map { surrounding ->
             val innerValue = injector.parser.toPrintableString(surrounding.innerText!!)
-            val text = newSurround?.let { it.first + innerValue + it.second } ?: innerValue
-            val textData = PutData.TextData(text, SelectionType.CHARACTER_WISE, emptyList(), null)
+            val text = newSurround?.let {
+              val trimmedValue = if (newSurround.shouldTrim) innerValue.trim() else innerValue
+              it.first + trimmedValue + it.second
+            } ?: innerValue
+            val textData = PutData.TextData(null, injector.clipboardManager.dumbCopiedText(text), SelectionType.CHARACTER_WISE)
             val putData = PutData(textData, null, 1, insertTextBeforeCaret = true, rawIndent = true, caretAfterInsertedText = false)
 
             surrounding.caret to putData
@@ -242,7 +251,7 @@ internal class VimSurroundExtension : VimExtension {
     }
   }
 
-  private data class SurroundingInfo(val caret: VimCaret, var innerText: List<KeyStroke>?, val oldRegisterContent: List<KeyStroke>?) {
+  private data class SurroundingInfo(val caret: VimCaret, var innerText: List<KeyStroke>?, val oldRegisterContent: List<KeyStroke>?, var isValidSurrounding: Boolean) {
     fun restoreRegister() {
       setRegisterForCaret(REGISTER, caret, oldRegisterContent)
     }
@@ -267,7 +276,7 @@ internal class VimSurroundExtension : VimExtension {
       val c = getChar(ijEditor)
       if (c.code == 0) return true
 
-      val pair = getOrInputPair(c, ijEditor) ?: return false
+      val pair = getOrInputPair(c, ijEditor, context.ij) ?: return false
       // XXX: Will it work with line-wise or block-wise selections?
       val range = getSurroundRange(editor.currentCaret()) ?: return false
       performSurround(pair, range, editor.currentCaret(), selectionType == SelectionType.LINE_WISE)
@@ -278,8 +287,10 @@ internal class VimSurroundExtension : VimExtension {
 
     private fun getSurroundRange(caret: VimCaret): TextRange? {
       val editor = caret.editor
-      val ijEditor = editor.ij
-      return when (ijEditor.vim.mode) {
+      if (editor.mode is Mode.CMD_LINE) {
+        editor.mode = editor.mode.returnTo
+      }
+      return when (editor.mode) {
         is Mode.NORMAL -> injector.markService.getChangeMarks(caret)
         is Mode.VISUAL -> caret.run { TextRange(selectionStart, selectionEnd) }
         else -> null
@@ -294,39 +305,44 @@ private const val REGISTER = '"'
 
 private const val OPERATOR_FUNC = "SurroundOperatorFunc"
 
-    private val tagNameAndAttributesCapturePattern = "(\\S+)([^>]*)>".toPattern()
+private val tagNameAndAttributesCapturePattern = "(\\S+)([^>]*)>".toPattern()
+
+private data class SurroundPair(val first: String, val second: String, val shouldTrim: Boolean)
 
 private val SURROUND_PAIRS = mapOf(
-  'b' to ("(" to ")"),
-  '(' to ("( " to " )"),
-  ')' to ("(" to ")"),
-  'B' to ("{" to "}"),
-  '{' to ("{ " to " }"),
-  '}' to ("{" to "}"),
-  'r' to ("[" to "]"),
-  '[' to ("[ " to " ]"),
-  ']' to ("[" to "]"),
-  'a' to ("<" to ">"),
-  '>' to ("<" to ">"),
-  's' to (" " to ""),
+  'b' to SurroundPair("(", ")", false),
+  '(' to SurroundPair("( ", " )", false),
+  ')' to SurroundPair("(", ")", true),
+  'B' to SurroundPair("{", "}", false),
+  '{' to SurroundPair("{ ", " }", false),
+  '}' to SurroundPair("{", "}", true),
+  'r' to SurroundPair("[", "]", false),
+  '[' to SurroundPair("[ ", " ]", false),
+  ']' to SurroundPair("[", "]", true),
+  'a' to SurroundPair("<", ">", false),
+  '>' to SurroundPair("<", ">", false),
+  's' to SurroundPair(" ", "", false),
 )
 
-private fun getSurroundPair(c: Char): Pair<String, String>? = if (c in SURROUND_PAIRS) {
+private fun getSurroundPair(c: Char): SurroundPair? = if (c in SURROUND_PAIRS) {
   SURROUND_PAIRS[c]
 } else if (!c.isLetter()) {
   val s = c.toString()
-  s to s
+  SurroundPair(s, s, false)
 } else {
   null
 }
 
-private fun inputTagPair(editor: Editor): Pair<String, String>? {
-  val tagInput = inputString(editor, "<", '>')
+private fun inputTagPair(editor: Editor, context: DataContext): SurroundPair? {
+  val tagInput = inputString(editor, context, "<", '>')
+  if (editor.vim.mode is Mode.CMD_LINE) {
+    editor.vim.mode = editor.vim.mode.returnTo
+  }
   val matcher = tagNameAndAttributesCapturePattern.matcher(tagInput)
   return if (matcher.find()) {
     val tagName = matcher.group(1)
     val tagAttributes = matcher.group(2)
-    "<$tagName$tagAttributes>" to "</$tagName>"
+    SurroundPair("<$tagName$tagAttributes>", "</$tagName>", false)
   } else {
     null
   }
@@ -334,17 +350,25 @@ private fun inputTagPair(editor: Editor): Pair<String, String>? {
 
 private fun inputFunctionName(
   editor: Editor,
+  context: DataContext,
   withInternalSpaces: Boolean,
-): Pair<String, String>? {
-  val functionNameInput = inputString(editor, "function: ", null)
+): SurroundPair? {
+  val functionNameInput = inputString(editor, context, "function: ", null)
+  if (editor.vim.mode is Mode.CMD_LINE) {
+    editor.vim.mode = editor.vim.mode.returnTo
+  }
   if (functionNameInput.isEmpty()) return null
-  return if (withInternalSpaces) "$functionNameInput( " to " )" else "$functionNameInput(" to ")"
+  return if (withInternalSpaces) {
+    SurroundPair("$functionNameInput( ", " )", false)
+  } else {
+    SurroundPair("$functionNameInput(", ")", false)
+  }
 }
 
-private fun getOrInputPair(c: Char, editor: Editor): Pair<String, String>? = when (c) {
-  '<', 't' -> inputTagPair(editor)
-  'f' -> inputFunctionName(editor, false)
-  'F' -> inputFunctionName(editor, true)
+private fun getOrInputPair(c: Char, editor: Editor, context: DataContext): SurroundPair? = when (c) {
+  '<', 't' -> inputTagPair(editor, context)
+  'f' -> inputFunctionName(editor, context, false)
+  'F' -> inputFunctionName(editor, context, true)
   else -> getSurroundPair(c)
 }
 
@@ -360,7 +384,7 @@ private fun getChar(editor: Editor): Char {
   return res
 }
 
-private fun performSurround(pair: Pair<String, String>, range: TextRange, caret: VimCaret, tagsOnNewLines: Boolean = false) {
+private fun performSurround(pair: SurroundPair, range: TextRange, caret: VimCaret, tagsOnNewLines: Boolean = false) {
   runWriteAction {
     val editor = caret.editor
     val change = VimPlugin.getChange()
