@@ -27,15 +27,18 @@ import com.maddyhome.idea.vim.KeyHandler
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.api.injector
 import com.maddyhome.idea.vim.command.MappingMode
+import com.maddyhome.idea.vim.group.IjOptions
 import com.maddyhome.idea.vim.helper.ActionEventKeyStrokeExtractor
 import com.maddyhome.idea.vim.impl.state.VimStateMachineImpl
-import com.maddyhome.idea.vim.key.KeySource
 import com.maddyhome.idea.vim.key.MappingInfo
 import com.maddyhome.idea.vim.key.MappingOwner
 import com.maddyhome.idea.vim.key.ToActionMappingInfo
 import com.maddyhome.idea.vim.key.ToKeysMappingInfo
+import com.maddyhome.idea.vim.newapi.globalIjOptions
 import com.maddyhome.idea.vim.newapi.vim
+import com.maddyhome.idea.vim.options.GlobalOptionChangeListener
 import com.maddyhome.idea.vim.state.mode.Mode
+import org.jetbrains.annotations.VisibleForTesting
 import java.awt.Component
 import java.awt.KeyboardFocusManager
 import java.awt.event.KeyEvent
@@ -64,6 +67,7 @@ class OutsideEditorKeyDispatcher : DumbAwareAction() {
 
   private fun isEnabled(e: AnActionEvent): Boolean {
     if (VimPlugin.isNotEnabled()) return false
+    if (!injector.globalIjOptions().ideaoutsideeditor) return false
     if (e.getData(PlatformDataKeys.EDITOR) != null) return false
     if (e.getData(PlatformDataKeys.SPEED_SEARCH_TEXT) != null) return false
     if (e.getData(PlatformDataKeys.IS_MODAL_CONTEXT) == true) return false
@@ -82,15 +86,14 @@ class OutsideEditorKeyDispatcher : DumbAwareAction() {
     val keyHandler = KeyHandler.getInstance()
     val fallbackWindow = injector.fallbackWindow
     if (keyStroke.isEscape) {
+      injector.listenersNotifier.notifyKeyTyped(fallbackWindow, keyStroke)
       resetToNormal()
       return
     }
     try {
       forceNormalModeSilently()
       keyHandler.withoutRecording {
-        keyHandler.handleKey(
-          fallbackWindow, keyStroke, KeySource.TYPED, e.dataContext.vim, keyHandler.keyHandlerState
-        )
+        keyHandler.handleUserKey(fallbackWindow, keyStroke, e.dataContext.vim)
       }
     } catch (ex: ProcessCanceledException) {
       throw ex
@@ -113,6 +116,7 @@ class OutsideEditorKeyDispatcher : DumbAwareAction() {
   }
 
   private fun register(component: JComponent) {
+    if (!injector.globalIjOptions().ideaoutsideeditor) return
     // The shortcut set is rebuilt on every registration, so `:map`/`:unmap` executed since the last focus change are
     // picked up. Escape is always included so that a pending sequence can be cancelled.
     val keys = userMappingKeys().flatten().toMutableSet()
@@ -139,18 +143,26 @@ class OutsideEditorKeyDispatcher : DumbAwareAction() {
     injector.keyGroup.getKeyMapping(MappingMode.NORMAL).getAll(emptyList())
       .filter { it.mappingInfo.owner.isUserDefined && it.mappingInfo.isActionsOnly }.map { it.getPath() }
 
-  private val focusListener = PropertyChangeListener { evt ->
+  private fun onFocusOwnerChanged(newFocusOwner: Component?) {
     unregister()
-    val newFocusOwner = evt.newValue as? JComponent ?: return@PropertyChangeListener
-    if (shouldHandle(newFocusOwner)) register(newFocusOwner)
+    if (newFocusOwner is JComponent && shouldHandle(newFocusOwner)) register(newFocusOwner)
   }
 
-  fun installFocusListener() {
+  @VisibleForTesting
+  internal val focusListener = PropertyChangeListener { evt -> onFocusOwnerChanged(evt.newValue as? Component) }
+
+  private val optionListener = GlobalOptionChangeListener {
+    onFocusOwnerChanged(KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner)
+  }
+
+  fun installListeners() {
     KeyboardFocusManager.getCurrentKeyboardFocusManager().addPropertyChangeListener("focusOwner", focusListener)
+    injector.optionGroup.addGlobalOptionChangeListener(IjOptions.ideaoutsideeditor, optionListener)
   }
 
-  fun removeFocusListener() {
+  fun removeListeners() {
     KeyboardFocusManager.getCurrentKeyboardFocusManager().removePropertyChangeListener("focusOwner", focusListener)
+    injector.optionGroup.removeGlobalOptionChangeListener(IjOptions.ideaoutsideeditor, optionListener)
     unregister()
   }
 

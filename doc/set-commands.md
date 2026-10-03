@@ -255,10 +255,21 @@ The old name is deprecated, but still accepted by `:set` and by the `&{option}` 
                         focused in Normal mode, so the first <Esc> leaves
                         Insert or Visual mode and the next one defocuses the
                         tool window.
+           main         Tabs in the main editor area that are not backed by
+                        a regular file, e.g. editors opened by third-party
+                        plugins for in-memory or decrypted content. Not
+                        enabled by default. Enable with
+                        `:set ideaeditor+=main`.
+           chat         The prompt input of AI chats: JetBrains AI Assistant
+                        (including Junie in AI Assistant) and AIR. The input
+                        is focused in Insert mode, so <Enter> still sends the
+                        message; in Normal mode <Enter> is a Vim motion. Chat
+                        answers are not affected. Not enabled by default.
+                        Enable with `:set ideaeditor+=chat`.
 
         Remove a value to revert that editor to its native behaviour with no
         Vim keybindings. The change takes effect immediately for all open
-        console windows.
+        console and chat input windows.
 
         This option replaces 'ideapythonconsole', which has been removed.
 
@@ -277,6 +288,21 @@ The old name is deprecated, but still accepted by `:set` and by the `&{option}` 
 'ideamarks'             boolean (default on)
                         global
         Maps Vim's global marks to IDE bookmarks.
+
+'ideaoutsideeditor'     boolean (default on)
+                        global
+        When on, Normal mode mappings to IDE actions keep working when no
+        file is open, e.g. `map <leader>sf <Action>(GotoFile)` pressed while
+        the Project tool window has the focus and every editor tab is closed.
+
+        Only user mappings whose right-hand side consists of <Action>(...)
+        sequences take part, since there is no editor for anything else to
+        act on. Text fields, such as Search Everywhere, and modal dialogs are
+        not affected, and keys that do not start such a mapping are left to
+        the IDE. <Esc> cancels a partially typed mapping.
+
+        Turn the option off to leave all keys typed outside an editor to the
+        IDE. The change takes effect immediately.
 
 'idearefactormode'      string  (default "select")
                         global or local to buffer
